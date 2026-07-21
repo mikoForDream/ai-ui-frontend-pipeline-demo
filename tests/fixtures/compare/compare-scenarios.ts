@@ -1,6 +1,6 @@
 import {
   duplicateAttempt,
-  missingFieldProduct,
+  missingPriceProduct,
   normalCompareSet,
   outOfStockProduct,
   overLimitAttempt,
@@ -9,7 +9,8 @@ import {
 } from './compare-data';
 import {
   emptyCompareResponse,
-  missingFieldCompareResponse,
+  missingPriceCompareResponse,
+  outOfStockCompareResponse,
   serverErrorResponse,
   successCompareResponse,
   timeoutErrorResponse,
@@ -49,8 +50,8 @@ export const compareScenarioChecklist = [
   {
     id: 'compare-missing-price',
     category: 'edge-case',
-    input: missingFieldProduct.fixtureId,
-    sample: missingFieldCompareResponse,
+    input: missingPriceProduct.fixtureId,
+    sample: missingPriceCompareResponse,
     assertions: ['价格缺失时按确认后的规则降级', '页面不渲染 undefined 或抛错'],
     blockedBy: [unresolvedRules.missingPriceCopy],
   },
@@ -58,6 +59,7 @@ export const compareScenarioChecklist = [
     id: 'compare-out-of-stock',
     category: 'edge-case',
     input: outOfStockProduct.fixtureId,
+    sample: outOfStockCompareResponse,
     assertions: ['库存为 0 时按确认后的规则展示', '该状态不与价格缺失混为同一输入'],
     blockedBy: [unresolvedRules.missingStockCopy],
   },

@@ -41,12 +41,13 @@
 - 正常数据：`normalProducts`
 - 重复候选：`duplicateAttempt`，判重策略为待确认项
 - 超限候选：`overLimitAttempt`，上限由场景参数传入
-- 缺字段：`missingFieldProduct`
+- 部分字段缺失：`missingFieldProduct`
+- 仅价格缺失：`missingPriceProduct`
 - 无库存：`outOfStockProduct`
 - 成功、空数组、部分字段缺失、500、超时：见 `compare-api-samples.ts`
 - 页面及联调检查清单：见 `compare-scenarios.ts`
 
-价格缺失和无库存使用两个不同的输入夹具，避免用单一输入断言两个不相符的状态。
+正常、部分字段缺失、仅价格缺失和无库存均使用独立输入与独立响应样本，避免一个场景夹带其他状态。
 
 ## 接入真实项目的完成条件
 

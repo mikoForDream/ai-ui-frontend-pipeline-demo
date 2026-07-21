@@ -11,7 +11,7 @@ export type ProductCompareFixture = {
   source: UnknownRecord;
   specs: CompareSpecFixture[];
   expected: {
-    category: 'normal' | 'duplicate_candidate' | 'over_limit_candidate' | 'missing_fields' | 'out_of_stock';
+    category: 'normal' | 'duplicate_candidate' | 'over_limit_candidate' | 'missing_fields' | 'missing_price' | 'out_of_stock';
     missingFields?: string[];
     stockState?: 'available' | 'unavailable' | 'unknown';
   };

@@ -1,7 +1,8 @@
 import {
   duplicateAttempt,
   missingFieldProduct,
-  normalCompareSet,
+  missingPriceProduct,
+  normalProducts,
   outOfStockProduct,
   overLimitAttempt,
   postRemoveCompareSet,
@@ -12,8 +13,8 @@ import type { CompareApiSample } from './compare-types';
 export const successCompareResponse: CompareApiSample = {
   transport: 'success',
   httpStatus: 200,
-  payload: { candidateItems: normalCompareSet.map((item) => item.source) },
-  fixtureItems: normalCompareSet,
+  payload: { candidateItems: normalProducts.map((item) => item.source) },
+  fixtureItems: normalProducts,
   expected: { kind: 'success' },
 };
 
@@ -28,8 +29,24 @@ export const emptyCompareResponse: CompareApiSample = {
 export const missingFieldCompareResponse: CompareApiSample = {
   transport: 'success',
   httpStatus: 200,
-  payload: { candidateItems: [missingFieldProduct.source, outOfStockProduct.source] },
-  fixtureItems: [missingFieldProduct, outOfStockProduct],
+  payload: { candidateItems: [missingFieldProduct.source] },
+  fixtureItems: [missingFieldProduct],
+  expected: { kind: 'partial' },
+};
+
+export const missingPriceCompareResponse: CompareApiSample = {
+  transport: 'success',
+  httpStatus: 200,
+  payload: { candidateItems: [missingPriceProduct.source] },
+  fixtureItems: [missingPriceProduct],
+  expected: { kind: 'partial' },
+};
+
+export const outOfStockCompareResponse: CompareApiSample = {
+  transport: 'success',
+  httpStatus: 200,
+  payload: { candidateItems: [outOfStockProduct.source] },
+  fixtureItems: [outOfStockProduct],
   expected: { kind: 'partial' },
 };
 
@@ -69,6 +86,8 @@ export const compareApiSamples = {
   successCompareResponse,
   emptyCompareResponse,
   missingFieldCompareResponse,
+  missingPriceCompareResponse,
+  outOfStockCompareResponse,
   duplicateAddResponse,
   overLimitAddResponse,
   postRemoveRefreshResponse,

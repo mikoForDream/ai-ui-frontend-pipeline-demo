@@ -73,14 +73,27 @@ export const overLimitProduct: ProductCompareFixture = {
 
 export const missingFieldProduct: ProductCompareFixture = {
   fixtureId: 'fixture-product-missing-fields',
-  source: { candidateId: 'sku-1999', candidatePrice: null, candidateStock: null },
+  source: { candidateId: 'sku-1999', candidatePrice: 3299, candidateStock: 7 },
   specs: [{ key: 'screen', label: '屏幕', value: null }],
   expected: {
     category: 'missing_fields',
     missingFields: ['candidateName', 'candidateImage', 'detailNavigationField'],
-    stockState: 'unknown',
+    stockState: 'available',
   },
   detailCandidate: { identifier: 'sku-1999', sourceField: 'unconfirmed' },
+};
+
+export const missingPriceProduct: ProductCompareFixture = {
+  ...product(
+    'fixture-product-missing-price',
+    { candidateId: 'sku-2000', candidateName: 'LiteBook 13', candidatePrice: null, candidateStock: 7 },
+    [{ key: 'memory', label: '内存', value: '16GB' }],
+  ),
+  expected: {
+    category: 'missing_price',
+    missingFields: ['candidatePrice'],
+    stockState: 'available',
+  },
 };
 
 export const outOfStockProduct: ProductCompareFixture = {
