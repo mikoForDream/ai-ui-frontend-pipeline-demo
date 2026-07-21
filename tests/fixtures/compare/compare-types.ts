@@ -1,75 +1,57 @@
-export type CompareSpec = {
+export type UnknownRecord = Record<string, unknown>;
+
+export type CompareSpecFixture = {
   key: string;
   label: string;
-  value: string;
-  isDifferent: boolean;
+  value: string | null;
 };
 
-export type ComparePrice = {
-  amount: number | null;
-  currency: string;
-  display: string;
-};
-
-export type CompareStock = {
-  available: number | null;
-  status: 'in_stock' | 'out_of_stock' | 'unknown';
-  display: string;
-};
-
-export type CompareDetailLink = {
-  productId: string;
-  href?: string;
-  route?: {
-    name: string;
-    productId: string;
+export type ProductCompareFixture = {
+  fixtureId: string;
+  source: UnknownRecord;
+  specs: CompareSpecFixture[];
+  expected: {
+    category: 'normal' | 'duplicate_candidate' | 'over_limit_candidate' | 'missing_fields' | 'out_of_stock';
+    missingFields?: string[];
+    stockState?: 'available' | 'unavailable' | 'unknown';
+  };
+  detailCandidate?: {
+    identifier: string | null;
+    sourceField: 'unconfirmed';
   };
 };
 
-export type CompareMeta = {
-  category:
-    | 'normal'
-    | 'duplicate'
-    | 'over_limit'
-    | 'missing_fields'
-    | 'out_of_stock';
-  isDuplicateCandidate?: boolean;
-  isOverLimitCandidate?: boolean;
-  missingFields?: string[];
-};
-
-export type ProductCompareItem = {
-  id: string;
-  name?: string;
-  image?: string;
-  price?: ComparePrice | null;
-  stock?: CompareStock | null;
-  specs: CompareSpec[];
-  detail: CompareDetailLink;
-  meta: CompareMeta;
-};
-
-export type CompareApiResponse = {
-  code: number;
-  message: string;
-  requestId: string;
-  data: {
-    compareLimit: number;
-    items: ProductCompareItem[];
-    summary: {
-      total: number;
-      canAddMore: boolean;
-    };
-  } | null;
-};
-
-export type CompareApiErrorResponse = {
-  code: number;
-  message: string;
-  requestId: string;
-  error: {
-    type: 'server_error' | 'timeout' | 'validation_error';
-    retryable: boolean;
-    detail: string;
+export type CompareApiSample = {
+  transport: 'success' | 'http_error' | 'timeout';
+  httpStatus?: number;
+  payload?: UnknownRecord | null;
+  fixtureItems?: ProductCompareFixture[];
+  expected: {
+    kind: 'success' | 'empty' | 'partial' | 'duplicate_rejected' | 'limit_rejected' | 'server_error' | 'timeout';
+    retryable?: boolean;
   };
+};
+
+export type UnresolvedRuleKey =
+  | 'compareLimit'
+  | 'duplicateIdentity'
+  | 'differenceCalculation'
+  | 'missingPriceCopy'
+  | 'missingStockCopy'
+  | 'detailNavigation'
+  | 'apiContract';
+
+export const unresolvedRules: Record<UnresolvedRuleKey, string> = {
+  compareLimit: '待产品或接口定义确认最大对比数量及其来源',
+  duplicateIdentity: '待确认按商品 ID、SKU、SPU 或组合字段判重',
+  differenceCalculation: '待确认差异由接口返回还是前端计算，以及高亮规则',
+  missingPriceCopy: '待确认价格缺失时的展示文案与交互',
+  missingStockCopy: '待确认库存缺失或为零时的展示文案与交互',
+  detailNavigation: '待确认详情跳转字段、路由名称和参数来源',
+  apiContract: '仓库暂无真实接口定义；当前样本不是生产接口契约',
+};
+
+export type CompareScenarioConfig = {
+  testOnlyLimit: number;
+  duplicateMatcher: 'fixture_id_for_test_only';
 };
