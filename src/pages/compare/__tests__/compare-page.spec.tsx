@@ -1,65 +1,51 @@
-import { describe, expect, it } from 'vitest'
-import { renderComparePage, compareScenarios } from '../../../test/compare-page'
+import { describe, expect, it } from 'vitest';
+import {
+  compareApiSamples,
+  comparePageDiscovery,
+  compareScenarioChecklist,
+  loadComparePageModule,
+  normalProducts,
+  unresolvedRules,
+} from '../../../test/compare-page';
 
 describe('ComparePage test scaffold', () => {
-  describe('main flow', () => {
-    it('boots with compare page context and seed data', async () => {
-      const view = await renderComparePage({
-        scenario: compareScenarios.happyPath,
-      })
+  describe('fixture and environment baseline', () => {
+    it('reuses the step 2 fixtures instead of redefining product data', () => {
+      expect(normalProducts).toHaveLength(3);
+      expect(compareApiSamples.successCompareResponse.fixtureItems).toEqual(normalProducts);
+      expect(compareScenarioChecklist.length).toBeGreaterThan(0);
+    });
 
-      expect(view.context.route).toBe('/compare')
-      expect(view.context.products).toHaveLength(2)
-      expect(view.screen.getByTestId('compare-page-root')).toBeTruthy()
-    })
-  })
+    it('keeps unresolved business rules visible', () => {
+      expect(Object.keys(unresolvedRules)).toEqual(
+        expect.arrayContaining([
+          'compareLimit',
+          'duplicateIdentity',
+          'differenceCalculation',
+          'detailNavigation',
+          'apiContract',
+        ]),
+      );
+    });
 
-  describe('component interaction', () => {
-    it('supports mock switching for duplicate and max-limit cases', async () => {
-      const duplicateView = await renderComparePage({
-        scenario: compareScenarios.duplicateBlocked,
-      })
-      expect(duplicateView.context.api.addProduct.code).toBe('DUPLICATE')
+    it('reports page discovery without substituting a test harness', () => {
+      if (comparePageDiscovery.found) {
+        expect(comparePageDiscovery.candidates.length).toBeGreaterThan(0);
+      } else {
+        expect(comparePageDiscovery.blocker).toBe('BLOCKED_REAL_COMPARE_PAGE_NOT_FOUND');
+        expect(comparePageDiscovery.candidates).toEqual([]);
+      }
+    });
+  });
 
-      const limitView = await renderComparePage({
-        scenario: compareScenarios.overLimitBlocked,
-      })
-      expect(limitView.context.api.addProduct.code).toBe('LIMIT_EXCEEDED')
-    })
-  })
+  const realPageSuite =
+    comparePageDiscovery.found && !comparePageDiscovery.ambiguous ? describe : describe.skip;
 
-  describe('state scenarios', () => {
-    it('supports loading, empty and error state initialization', async () => {
-      const loadingView = await renderComparePage({
-        scenario: compareScenarios.loading,
-      })
-      expect(loadingView.context.state).toBe('loading')
-
-      const emptyView = await renderComparePage({
-        scenario: compareScenarios.empty,
-      })
-      expect(emptyView.context.products).toHaveLength(0)
-
-      const errorView = await renderComparePage({
-        scenario: compareScenarios.error,
-      })
-      expect(errorView.context.error?.message).toContain('compare')
-    })
-  })
-
-  describe('risk notes', () => {
-    it('records missing selectors or page object dependencies for follow-up', () => {
-      expect([
-        'Page test uses provisional test ids: compare-page-root and compare-page-loading.',
-        'If the production page does not expose stable selectors, follow-up work must add non-visual test hooks.',
-        'Route jump assertions currently depend on injected navigation spy instead of a real page-level detail link selector.',
-      ]).toMatchInlineSnapshot(`
-        [
-          "Page test uses provisional test ids: compare-page-root and compare-page-loading.",
-          "If the production page does not expose stable selectors, follow-up work must add non-visual test hooks.",
-          "Route jump assertions currently depend on injected navigation spy instead of a real page-level detail link selector.",
-        ]
-      `)
-    })
-  })
-})
+  realPageSuite('real page integration', () => {
+    it('loads exactly one real ComparePage module', async () => {
+      const pageModule = await loadComparePageModule();
+      expect(pageModule).not.toBeNull();
+      expect(pageModule && Object.keys(pageModule).length).toBeGreaterThan(0);
+    });
+  });
+});

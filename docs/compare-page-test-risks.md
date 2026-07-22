@@ -1,31 +1,45 @@
-# 商品对比页面测试骨架风险记录
+# 商品对比页面测试骨架与阻塞记录
 
-任务：compare_test_010
+任务：`compare_test_010`  
 当前步骤：3 - 搭建商品对比页面测试骨架与公共依赖
+
+## 本次修正结论
+
+测试环境与骨架已经建立，但仓库当前不存在可挂载的真实商品对比页面。因此本步骤只确认测试基础设施可运行，并将页面级验证明确标记为阻塞；不会使用临时 Harness 冒充真实页面，也不会声称页面测试已通过。
 
 ## 已建立内容
 
-- 商品对比页面测试入口：`src/pages/compare/__tests__/compare-page.spec.tsx`
-- 公共初始化与场景注入：`src/test/compare-page/index.tsx`
-- Mock 场景配置：`src/test/compare-page/mocks.ts`
+- `package.json`：提供 Vitest、jsdom、React Testing Library 等最小测试依赖和命令。
+- `vitest.config.ts`、`tsconfig.json`：提供测试环境与 TypeScript 配置。
+- `src/test/setup.ts`：统一加载 DOM 断言和测试清理。
+- `src/test/compare-page/page-discovery.ts`：仅发现并加载真实页面候选模块。
+- `src/test/compare-page/index.tsx`：统一复用步骤 2 的 fixtures 与场景清单。
+- `src/pages/compare/__tests__/compare-page.spec.tsx`：运行基础校验；真实页面缺失时跳过页面集成组并记录阻塞。
 
-## 当前测试骨架覆盖范围
+## 当前阻塞
 
-- 按主流程、组件联动、状态场景建立测试分组
-- 提供页面初始化能力，统一注入路由上下文、接口结果和种子商品数据
-- 提供 Mock 场景切换能力，支持后续扩展成功、重复、超上限、空态、错误态等用例
-- 提供页面对象识别基线，使用 `compare-page-root`、`compare-page-loading`、`compare-page-empty`、`compare-page-error` 作为临时定位标识
+`BLOCKED_REAL_COMPARE_PAGE_NOT_FOUND`
 
-## 已识别风险
+仓库中未发现以下真实页面入口之一：
 
-1. 当前仓库若尚未在真实商品对比页暴露稳定的 `data-testid` 或等价定位标识，后续页面级测试需要补充非视觉测试钩子，否则会降低回归稳定性。
-2. 当前公共测试工具使用轻量级 Harness 保持测试可启动，但详情跳转、局部失败恢复、真实接口联调仍依赖正式页面组件或更完整的页面装配入口。
-3. 若现有测试环境未全局安装 `@testing-library/react` 或 `jsdom`，还需在测试环境配置中补齐依赖；本步骤仅提供骨架，不声称已执行通过。
-4. 价格、库存、差异高亮等真实样式断言仍需依赖生产组件中的可见文本、样式类名或语义属性，当前骨架只定义场景数据，不替代真实验收断言。
+- `ComparePage.tsx` / `ComparePage.ts`
+- `compare-page.tsx` / `compare-page.ts`
+- `src/pages/compare/index.tsx` / `index.ts`
 
-## 后续建议
+因此暂时无法验证页面渲染、交互、稳定选择器或详情跳转。真实页面加入后，发现器会启用页面集成测试组；若匹配到多个候选，则以 `BLOCKED_MULTIPLE_COMPARE_PAGE_CANDIDATES` 停止自动选择，避免挂载错误页面。
 
-- 将 Harness 替换为真实商品对比页组件挂载入口
-- 为商品卡片、对比表格、详情跳转按钮补充稳定定位标识
-- 在真实接口 Mock 层接入 query/add/remove 三类请求拦截
-- 按任务说明逐步补全添加、移除、差异高亮、价格库存、异常恢复等验收用例
+## 边界约束
+
+- 不在本步骤定义最大对比数量、判重依据、差异高亮、兜底文案或详情路由。
+- 不新建重复 Mock 数据；所有数据复用 `tests/fixtures/compare`。
+- `scenarioConfig` 中的数值仅为测试参数，不代表生产规则。
+- 接口字段继续作为候选样本，真实接口明确后再增加适配器和契约测试。
+
+## 本地验证
+
+```bash
+npm install
+npm test
+```
+
+预期结果：基础设施与 fixtures 校验通过；在真实页面尚未加入时，`real page integration` 测试组显示为 skipped，并由阻塞测试确认原因。
