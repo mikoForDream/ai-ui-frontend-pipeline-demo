@@ -18,9 +18,13 @@ export {
 
 export {
   compareApiSamples,
+  emptyCompareResponse,
+  missingFieldCompareResponse,
   missingPriceCompareResponse,
   outOfStockCompareResponse,
   postRemoveRefreshResponse,
+  serverErrorResponse,
+  timeoutErrorResponse,
 } from '../../../tests/fixtures/compare/compare-api-samples';
 export { compareScenarioChecklist } from '../../../tests/fixtures/compare/compare-scenarios';
 export { unresolvedRules } from '../../../tests/fixtures/compare/compare-types';
