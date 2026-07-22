@@ -6,6 +6,8 @@ export {
 
 export {
   normalProducts,
+  normalCompareSet,
+  postRemoveCompareSet,
   missingFieldProduct,
   missingPriceProduct,
   outOfStockProduct,
@@ -14,6 +16,6 @@ export {
   scenarioConfig,
 } from '../../../tests/fixtures/compare/compare-data';
 
-export { compareApiSamples } from '../../../tests/fixtures/compare/compare-api-samples';
+export { compareApiSamples, postRemoveRefreshResponse } from '../../../tests/fixtures/compare/compare-api-samples';
 export { compareScenarioChecklist } from '../../../tests/fixtures/compare/compare-scenarios';
 export { unresolvedRules } from '../../../tests/fixtures/compare/compare-types';
