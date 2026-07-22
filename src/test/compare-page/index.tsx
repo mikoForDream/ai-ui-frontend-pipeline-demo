@@ -16,6 +16,11 @@ export {
   scenarioConfig,
 } from '../../../tests/fixtures/compare/compare-data';
 
-export { compareApiSamples, postRemoveRefreshResponse } from '../../../tests/fixtures/compare/compare-api-samples';
+export {
+  compareApiSamples,
+  missingPriceCompareResponse,
+  outOfStockCompareResponse,
+  postRemoveRefreshResponse,
+} from '../../../tests/fixtures/compare/compare-api-samples';
 export { compareScenarioChecklist } from '../../../tests/fixtures/compare/compare-scenarios';
 export { unresolvedRules } from '../../../tests/fixtures/compare/compare-types';
