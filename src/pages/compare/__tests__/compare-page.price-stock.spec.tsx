@@ -165,7 +165,7 @@ describe('ComparePage price and stock presentation', () => {
         );
 
         expect(observation).toBeDefined();
-        expect(observation?.priceText).not.toMatch(/undefined|null|NaN/i);
+        expect(observation?.priceText ?? '').not.toMatch(/undefined|null|NaN/i);
         expect(['missing', 'unknown']).toContain(observation?.priceState ?? 'unknown');
         expect(['value', 'unknown']).toContain(observation?.stockState ?? 'unknown');
 
@@ -188,7 +188,7 @@ describe('ComparePage price and stock presentation', () => {
         expect(observation).toBeDefined();
         expect(observation?.priceState).toBe('value');
         expect(['out_of_stock', 'unknown']).toContain(observation?.stockState ?? 'unknown');
-        expect(observation?.stockText).not.toMatch(/undefined|null|NaN/i);
+        expect(observation?.stockText ?? '').not.toMatch(/undefined|null|NaN/i);
 
         await adapter.assertOutOfStockPresentation({
           fixture: outOfStockProduct,
