@@ -13,7 +13,7 @@ import {
 } from '../../../test/compare-page';
 import type { CompareApiSample, ProductCompareFixture } from '../../../../tests/fixtures/compare/compare-types';
 
-type ComparePageViewState = 'loading' | 'ready' | 'empty' | 'error' | 'partial' | 'unknown';
+type ComparePageViewState = 'loading' | 'ready' | 'empty' | 'error' | 'partial';
 
 type ComparePageStateSnapshot = {
   viewState: ComparePageViewState;
@@ -130,7 +130,7 @@ describe('ComparePage state handling', () => {
         await adapter.startInitialLoad();
 
         const loadingState = await adapter.readState();
-        expect(['loading', 'unknown']).toContain(loadingState.viewState);
+        expect(loadingState.viewState).toBe('loading');
         expect(loadingState.listedFixtureIds).toEqual([]);
         expect(loadingState.mainAreaFixtureIds).toEqual([]);
         await adapter.assertLoadingPresentation();
@@ -139,7 +139,7 @@ describe('ComparePage state handling', () => {
         const settledState = await adapter.readState();
         const expectedIds = normalProducts.map((fixture) => fixture.fixtureId);
 
-        expect(['ready', 'unknown']).toContain(settledState.viewState);
+        expect(settledState.viewState).toBe('ready');
         expect(settledState.listedFixtureIds).toEqual(expectedIds);
         expect(settledState.mainAreaFixtureIds).toEqual(expectedIds);
         expect(settledState.staleFixtureIds).toEqual([]);
@@ -155,7 +155,7 @@ describe('ComparePage state handling', () => {
         await adapter.awaitSettled();
 
         const state = await adapter.readState();
-        expect(['empty', 'unknown']).toContain(state.viewState);
+        expect(state.viewState).toBe('empty');
         expect(state.listedFixtureIds).toEqual([]);
         expect(state.mainAreaFixtureIds).toEqual([]);
         expect(state.visibleErrorText ?? '').not.toMatch(/undefined|null|NaN/i);
@@ -175,7 +175,7 @@ describe('ComparePage state handling', () => {
         await adapter.awaitSettled();
 
         const errorState = await adapter.readState();
-        expect(['error', 'unknown']).toContain(errorState.viewState);
+        expect(errorState.viewState).toBe('error');
         expect(errorState.listedFixtureIds).toEqual([]);
         expect(errorState.mainAreaFixtureIds).toEqual([]);
         expect(errorState.retryAvailable).toBe(true);
@@ -204,7 +204,7 @@ describe('ComparePage state handling', () => {
         const recoveredState = await adapter.readState();
         const expectedIds = normalProducts.map((fixture) => fixture.fixtureId);
 
-        expect(['ready', 'unknown']).toContain(recoveredState.viewState);
+        expect(recoveredState.viewState).toBe('ready');
         expect(recoveredState.listedFixtureIds).toEqual(expectedIds);
         expect(recoveredState.mainAreaFixtureIds).toEqual(expectedIds);
         expect(recoveredState.visibleErrorText ?? '').not.toMatch(/undefined|null|NaN/i);
@@ -220,7 +220,7 @@ describe('ComparePage state handling', () => {
         await adapter.awaitSettled();
 
         const timeoutState = await adapter.readState();
-        expect(['error', 'unknown']).toContain(timeoutState.viewState);
+        expect(timeoutState.viewState).toBe('error');
         expect(timeoutState.retryAvailable).toBe(true);
         expect(timeoutState.visibleErrorText ?? '').not.toMatch(/undefined|null|NaN/i);
 
@@ -247,7 +247,7 @@ describe('ComparePage state handling', () => {
         const recoveredState = await adapter.readState();
         const expectedIds = normalProducts.slice(0, 2).map((fixture) => fixture.fixtureId);
 
-        expect(['ready', 'unknown']).toContain(recoveredState.viewState);
+        expect(recoveredState.viewState).toBe('ready');
         expect(recoveredState.listedFixtureIds).toEqual(expectedIds);
         expect(recoveredState.mainAreaFixtureIds).toEqual(expectedIds);
       });
@@ -262,7 +262,7 @@ describe('ComparePage state handling', () => {
         await adapter.awaitSettled();
 
         const state = await adapter.readState();
-        expect(['partial', 'ready', 'unknown']).toContain(state.viewState);
+        expect(['partial', 'ready']).toContain(state.viewState);
         expect(state.listedFixtureIds).toEqual([missingFieldProduct.fixtureId]);
         expect(state.mainAreaFixtureIds).toEqual([missingFieldProduct.fixtureId]);
         expect(`${state.visibleErrorText ?? ''} ${state.visibleEmptyText ?? ''}`).not.toMatch(
