@@ -37,7 +37,7 @@
 				<el-table-column prop="createTime" label="创建时间" width="170" />
 				<el-table-column label="操作" width="190" fixed="right" align="center">
 					<template #default="{ row }">
-						<el-button text type="primary" @click="showStructure(row)">查看结构</el-button>
+						<el-button text type="primary" @click="openEditor(row)">{{ row.status === 'DRAFT' ? '设计流程' : '查看结构' }}</el-button>
 						<el-button v-if="row.status === 'DRAFT'" v-auth="'workflow_definition_publish'" text type="success" @click="publish(row)">发布</el-button>
 					</template>
 				</el-table-column>
@@ -62,31 +62,15 @@
 			>
 		</el-dialog>
 
-		<el-drawer v-model="structureVisible" :title="`${activeDefinition?.name || ''} · 流程结构`" size="520px">
-			<el-empty v-if="!nodes.length" description="尚未配置节点" />
-			<el-timeline v-else>
-				<el-timeline-item
-					v-for="node in nodes"
-					:key="node.id"
-					:type="node.endNode ? 'success' : node.startNode ? 'primary' : ''"
-					:timestamp="node.nodeType"
-					placement="top"
-				>
-					<el-card shadow="never"
-						><strong>{{ node.nodeName }}</strong
-						><span class="node-key">{{ node.nodeKey }}</span>
-						<p>下一节点：{{ node.nextNodeKey || (node.endNode ? '流程结束' : '按动作路由') }}</p></el-card
-					>
-				</el-timeline-item>
-			</el-timeline>
-		</el-drawer>
+		<definition-editor ref="editorRef" @published="loadData" />
 	</div>
 </template>
 
 <script setup lang="ts" name="workflowDefinition">
 import type { FormInstance, FormRules } from 'element-plus';
-import { createDefinition, getDefinitionNodes, getDefinitionPage, publishDefinition, type WorkflowDefinition } from '/@/api/workflow';
+import { createDefinition, getDefinitionPage, publishDefinition, type WorkflowDefinition } from '/@/api/workflow';
 import { useMessage, useMessageBox } from '/@/hooks/message';
+import DefinitionEditor from './editor.vue';
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -94,9 +78,7 @@ const rows = ref<WorkflowDefinition[]>([]);
 const query = reactive({ name: '', status: '' });
 const pagination = reactive({ current: 1, size: 10, total: 0 });
 const createVisible = ref(false);
-const structureVisible = ref(false);
-const activeDefinition = ref<WorkflowDefinition>();
-const nodes = ref<any[]>([]);
+const editorRef = ref();
 const createFormRef = ref<FormInstance>();
 const createForm = reactive({ name: '', code: '', version: 1, description: '' });
 const rules: FormRules = {
@@ -139,21 +121,17 @@ const submitCreate = async () => {
 	if (!(await createFormRef.value?.validate())) return;
 	submitting.value = true;
 	try {
-		await createDefinition(createForm);
+		const result = await createDefinition(createForm);
 		useMessage().success('流程草稿已创建');
 		createVisible.value = false;
-		loadData();
+		await loadData();
+		nextTick(() => editorRef.value?.open(result.data));
 	} finally {
 		submitting.value = false;
 	}
 };
 
-const showStructure = async (row: WorkflowDefinition) => {
-	activeDefinition.value = row;
-	structureVisible.value = true;
-	const res = await getDefinitionNodes(row.id);
-	nodes.value = res.data || [];
-};
+const openEditor = (row: WorkflowDefinition) => editorRef.value?.open(row);
 
 const publish = async (row: WorkflowDefinition) => {
 	try {
@@ -192,14 +170,5 @@ onMounted(loadData);
 	margin-bottom: 16px;
 	background: var(--el-fill-color-light);
 	border-radius: 8px;
-}
-.node-key {
-	margin-left: 10px;
-	color: var(--el-text-color-secondary);
-	font-family: monospace;
-}
-.el-card p {
-	margin: 10px 0 0;
-	color: var(--el-text-color-secondary);
 }
 </style>
