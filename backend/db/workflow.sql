@@ -104,9 +104,18 @@ CREATE TABLE IF NOT EXISTS `wf_execution_log` (
   KEY `idx_wf_log_task` (`task_id`)
 ) ENGINE=InnoDB COMMENT='工作流执行日志';
 
--- 第一阶段仅注册隐藏权限资源；前端页面完成后再开放侧边栏菜单。
+-- 工作流菜单与权限资源。
 INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `en_name`, `path`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`)
-VALUES (10000, '工作流管理', 'workflow', '/workflow', -1, '0', 5, '0', 'admin');
+VALUES (10000, '工作流管理', 'workflow', '/workflow', -1, '1', 5, '0', 'admin');
+
+UPDATE `sys_menu`
+SET `name` = '工作流管理', `en_name` = 'workflow', `path` = '/workflow', `icon` = 'ele-Connection', `visible` = '1', `menu_type` = '0'
+WHERE `menu_id` = 10000;
+
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `en_name`, `path`, `parent_id`, `icon`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10020, '流程定义', 'definitions', '/workflow/definition/index', 10000, 'ele-SetUp', '1', 1, '0', 'admin'),
+(10030, '流程实例', 'instances', '/workflow/instance/index', 10000, 'ele-VideoPlay', '1', 2, '0', 'admin'),
+(10040, '人工审核', 'approvals', '/workflow/approval/index', 10000, 'ele-Checked', '1', 3, '0', 'admin');
 
 INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
 (10001, '流程定义查询', 'workflow_definition_view', 10000, '0', 1, '1', 'admin'),
@@ -130,6 +139,13 @@ INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
 
 INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
 (1, 10010), (1, 10011), (1, 10012);
+
+UPDATE `sys_menu` SET `parent_id` = 10020 WHERE `menu_id` IN (10001, 10002, 10003, 10004);
+UPDATE `sys_menu` SET `parent_id` = 10030 WHERE `menu_id` IN (10005, 10006, 10007, 10008, 10009);
+UPDATE `sys_menu` SET `parent_id` = 10040 WHERE `menu_id` IN (10010, 10011, 10012);
+
+INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
+(1, 10020), (1, 10030), (1, 10040);
 
 -- V2：项目、动作流转、人工审核、产物版本和统一产品规格。
 SET @wf_definition_project_id_exists = (
