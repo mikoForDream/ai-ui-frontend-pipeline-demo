@@ -14,7 +14,35 @@ Pig 后端自带数据库脚本和 Docker Compose 配置：
 - 数据库脚本：`../backend/db/`
 - Docker Compose：`../backend/docker-compose.yml`
 
-## 启动顺序
+## 一键启动（推荐）
+
+在项目根目录执行：
+
+```powershell
+.\scripts\dev-start.ps1
+```
+
+脚本会启动 MySQL、Redis、Pig Boot 和 Pig UI，自动复用现有构建产物，并等待前后端健康检查通过。首次运行缺少前端依赖或后端构建产物时会自动安装或构建。
+
+常用命令：
+
+```powershell
+# 强制重新构建后端后启动
+.\scripts\dev-start.ps1 -Rebuild
+
+# 查看四个组件状态
+.\scripts\dev-status.ps1
+
+# 停止前后端，保留数据库和 Redis
+.\scripts\dev-stop.ps1
+
+# 同时停止数据库和 Redis
+.\scripts\dev-stop.ps1 -Infrastructure
+```
+
+运行日志和进程标识保存在被 Git 忽略的 `.tools/run/` 目录。
+
+## 手工启动顺序
 
 1. 启动 Docker Desktop。
 2. 在 `backend/` 下启动 `pig-mysql` 和 `pig-redis`。
