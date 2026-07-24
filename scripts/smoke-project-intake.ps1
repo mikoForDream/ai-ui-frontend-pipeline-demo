@@ -36,6 +36,7 @@ Assert-True ($null -ne $nodeExe) 'Node.js executable was not found'
 $runDirectory = (Resolve-Path '.tools\run').Path
 $encryptedPasswordFile = Join-Path $runDirectory 'project-smoke-encrypted-password.txt'
 $materialFile = Join-Path $runDirectory 'project-smoke-material.md'
+$uiImageFile = Join-Path $runDirectory 'project-smoke-ui.png'
 $encryptScript = (Resolve-Path 'scripts\encrypt-password.cjs').Path
 
 try {
@@ -58,6 +59,9 @@ try {
 	Assert-True ($currentUser.permissions -contains 'workflow_feature_review') 'login authority lacks feature review permission'
 	Assert-True ($currentUser.permissions -contains 'workflow_prototype_generate') 'login authority lacks prototype generation permission'
 	Assert-True ($currentUser.permissions -contains 'workflow_prototype_review') 'login authority lacks prototype review permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_ui_generate') 'login authority lacks UI generation permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_ui_upload') 'login authority lacks UI upload permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_ui_review') 'login authority lacks UI review permission'
 
 	$stamp = Get-Date -Format 'yyyyMMddHHmmss'
 	$project = Invoke-WorkflowApi Post '/workflow/projects' @{
@@ -126,8 +130,32 @@ try {
 	Assert-True (($prototypeCompleted.prototypes | Where-Object status -ne 'APPROVED').Count -eq 0) `
 		'not all module prototypes reached APPROVED'
 
-	Write-Host "Project intake and prototype regression passed for project $projectId."
+	$firstUi = Invoke-WorkflowApi Post "/workflow/modules/$($modules[0].id)/ui-designs/generate"
+	Assert-True ($firstUi.versionNo -eq 'V1') "first UI design version is $($firstUi.versionNo)"
+	$uiDetail = Invoke-WorkflowApi Get "/workflow/ui-designs/$($firstUi.versionId)"
+	Assert-True ($uiDetail.contentKind -eq 'HTML' -and $uiDetail.html -like '*<!doctype html>*') 'UI design detail does not contain HTML'
+	[void](Invoke-WorkflowApi Post "/workflow/ui-designs/$($firstUi.versionId)/reviews" @{
+		action = 'REJECT'
+		comment = 'smoke requires a revised UI design'
+	})
+	$secondUi = Invoke-WorkflowApi Post "/workflow/modules/$($modules[0].id)/ui-designs/generate"
+	Assert-True ($secondUi.versionNo -eq 'V2') "regenerated UI design version is $($secondUi.versionNo)"
+	[void](Invoke-WorkflowApi Post "/workflow/ui-designs/$($secondUi.versionId)/reviews" @{ action = 'APPROVE'; comment = 'smoke approved UI V2' })
+
+	# 1x1 transparent PNG, sufficient to exercise the authenticated object-storage path.
+	[IO.File]::WriteAllBytes($uiImageFile, [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='))
+	$uploadUi = Invoke-RestMethod -Method Post -Uri "$BaseUrl/workflow/modules/$($modules[1].id)/ui-designs" `
+		-Headers @{ Authorization = "Bearer $script:AccessToken" } -Form @{ file = Get-Item $uiImageFile }
+	Assert-True ($uploadUi.code -eq 0 -and $uploadUi.data.contentKind -eq 'IMAGE') "UI design upload failed: $($uploadUi.msg)"
+	[void](Invoke-WorkflowApi Post "/workflow/ui-designs/$($uploadUi.data.versionId)/reviews" @{ action = 'APPROVE'; comment = 'smoke approved uploaded image' })
+	$uiCompleted = Invoke-WorkflowApi Get "/workflow/projects/$projectId/workspace"
+	Assert-True ($uiCompleted.project.currentStage -eq 'FRONTEND_READY') `
+		"project stage is $($uiCompleted.project.currentStage), expected FRONTEND_READY"
+	Assert-True ($uiCompleted.uiDesigns.Count -eq $modules.Count) 'module UI design count mismatch'
+	Assert-True (($uiCompleted.uiDesigns | Where-Object status -ne 'APPROVED').Count -eq 0) 'not all module UI designs reached APPROVED'
+
+	Write-Host "Project intake, prototype and UI design regression passed for project $projectId."
 }
 finally {
-	Remove-Item $encryptedPasswordFile, $materialFile -Force -ErrorAction SilentlyContinue
+	Remove-Item $encryptedPasswordFile, $materialFile, $uiImageFile -Force -ErrorAction SilentlyContinue
 }

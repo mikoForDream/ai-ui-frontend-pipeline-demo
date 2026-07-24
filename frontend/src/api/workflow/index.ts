@@ -102,7 +102,7 @@ export interface WorkflowModule {
 	name: string;
 	description?: string;
 	sortOrder: number;
-	status: 'REQUIREMENT_REVIEW' | 'REQUIREMENT_APPROVED' | 'PROTOTYPE_REVIEW' | 'PROTOTYPE_REVISION' | 'PROTOTYPE_APPROVED';
+	status: 'REQUIREMENT_REVIEW' | 'REQUIREMENT_APPROVED' | 'PROTOTYPE_REVIEW' | 'PROTOTYPE_REVISION' | 'PROTOTYPE_APPROVED' | 'UI_REVIEW' | 'UI_REVISION' | 'UI_APPROVED';
 }
 
 export interface ModulePrototype {
@@ -118,6 +118,23 @@ export interface ModulePrototype {
 
 export interface ModulePrototypeDetail extends ModulePrototype {
 	html: string;
+}
+
+export interface ModuleUiDesign {
+	artifactId: string;
+	moduleId: string;
+	versionId: string;
+	versionNo: string;
+	status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'RETURNED';
+	sourceType: 'RULE_BASED_UI_V1' | 'USER_UPLOAD';
+	contentKind: 'HTML' | 'IMAGE';
+	originalName?: string;
+	reviewComment?: string;
+	createTime?: string;
+}
+
+export interface ModuleUiDesignDetail extends ModuleUiDesign {
+	html?: string;
 }
 
 export interface WorkflowFeature {
@@ -140,6 +157,7 @@ export interface WorkflowProjectWorkspace {
 	modules: WorkflowModule[];
 	features: WorkflowFeature[];
 	prototypes: ModulePrototype[];
+	uiDesigns: ModuleUiDesign[];
 	frozenSpecVersion?: string;
 }
 
@@ -219,3 +237,24 @@ export const getModulePrototype = (versionId: string) =>
 
 export const reviewModulePrototype = (versionId: string, data: { action: 'APPROVE' | 'REJECT' | 'RETURN'; comment?: string }) =>
 	request({ url: `/admin/workflow/prototypes/${versionId}/reviews`, method: 'post', data });
+
+export const generateModuleUiDesign = (moduleId: string) =>
+	request({ url: `/admin/workflow/modules/${moduleId}/ui-designs/generate`, method: 'post', timeout: 120000 });
+
+export const uploadModuleUiDesign = (moduleId: string, data: FormData) =>
+	request({
+		url: `/admin/workflow/modules/${moduleId}/ui-designs`,
+		method: 'post',
+		data,
+		headers: { 'Content-Type': 'multipart/form-data' },
+		timeout: 120000,
+	});
+
+export const getModuleUiDesign = (versionId: string) =>
+	request({ url: `/admin/workflow/ui-designs/${versionId}`, method: 'get' });
+
+export const getModuleUiDesignContent = (versionId: string) =>
+	request({ url: `/admin/workflow/ui-designs/${versionId}/content`, method: 'get', responseType: 'blob' });
+
+export const reviewModuleUiDesign = (versionId: string, data: { action: 'APPROVE' | 'REJECT' | 'RETURN'; comment?: string }) =>
+	request({ url: `/admin/workflow/ui-designs/${versionId}/reviews`, method: 'post', data });

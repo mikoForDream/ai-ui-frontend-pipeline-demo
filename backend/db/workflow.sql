@@ -471,3 +471,12 @@ INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `vi
 
 INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
 (1, 10021), (1, 10022);
+
+-- V5: module UI draft generation, user design upload and review.
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10023, '模块 UI 草稿生成', 'workflow_ui_generate', 10015, '0', 9, '1', 'admin'),
+(10024, '模块设计图上传', 'workflow_ui_upload', 10015, '0', 10, '1', 'admin'),
+(10025, '模块 UI 审核', 'workflow_ui_review', 10015, '0', 11, '1', 'admin');
+
+INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
+(1, 10023), (1, 10024), (1, 10025);
