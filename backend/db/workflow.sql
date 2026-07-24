@@ -1,4 +1,6 @@
 -- AI 工作流核心表与首批权限资源（MySQL 8+）
+-- mysql CLI may default to latin1 in minimal containers; switch before reading any UTF-8 literals.
+SET NAMES utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `wf_definition` (
   `id` bigint NOT NULL,
@@ -480,3 +482,67 @@ INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `vi
 
 INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
 (1, 10023), (1, 10024), (1, 10025);
+
+-- V6: module frontend implementation notes, code generation and review.
+SET @wf_module_frontend_logic_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'wf_module' AND column_name = 'frontend_logic'
+);
+SET @wf_module_frontend_logic_sql = IF(
+  @wf_module_frontend_logic_exists = 0,
+  'ALTER TABLE `wf_module` ADD COLUMN `frontend_logic` text DEFAULT NULL AFTER `description`',
+  'SELECT 1'
+);
+PREPARE wf_module_frontend_logic_stmt FROM @wf_module_frontend_logic_sql;
+EXECUTE wf_module_frontend_logic_stmt;
+DEALLOCATE PREPARE wf_module_frontend_logic_stmt;
+
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10026, '模块前端逻辑编辑', 'workflow_frontend_edit', 10015, '0', 12, '1', 'admin'),
+(10027, '模块前端代码生成', 'workflow_frontend_generate', 10015, '0', 13, '1', 'admin'),
+(10028, '模块前端代码审核', 'workflow_frontend_review', 10015, '0', 14, '1', 'admin');
+
+INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
+(1, 10026), (1, 10027), (1, 10028);
+
+-- INSERT IGNORE preserves existing rows, so repair menu labels after any earlier import with a wrong client charset.
+UPDATE `sys_menu`
+SET `name` = CASE `menu_id`
+  WHEN 10000 THEN '工作流管理'
+  WHEN 10001 THEN '流程定义查询'
+  WHEN 10002 THEN '流程定义新增'
+  WHEN 10003 THEN '流程定义编辑'
+  WHEN 10004 THEN '流程定义发布'
+  WHEN 10005 THEN '流程实例查询'
+  WHEN 10006 THEN '流程实例启动'
+  WHEN 10007 THEN '流程任务查询'
+  WHEN 10008 THEN '流程任务执行'
+  WHEN 10009 THEN '流程任务重试'
+  WHEN 10010 THEN '审核记录查询'
+  WHEN 10011 THEN '审核待办领取'
+  WHEN 10012 THEN '审核决定提交'
+  WHEN 10013 THEN '研发项目查询'
+  WHEN 10014 THEN '研发项目编辑'
+  WHEN 10015 THEN '研发项目'
+  WHEN 10016 THEN '项目资料上传'
+  WHEN 10017 THEN '项目资料分析'
+  WHEN 10018 THEN '功能点编辑'
+  WHEN 10019 THEN '功能点审核'
+  WHEN 10020 THEN '流程定义'
+  WHEN 10021 THEN '模块原型生成'
+  WHEN 10022 THEN '模块原型审核'
+  WHEN 10023 THEN '模块 UI 草稿生成'
+  WHEN 10024 THEN '模块设计图上传'
+  WHEN 10025 THEN '模块 UI 审核'
+  WHEN 10026 THEN '模块前端逻辑编辑'
+  WHEN 10027 THEN '模块前端代码生成'
+  WHEN 10028 THEN '模块前端代码审核'
+  WHEN 10030 THEN '流程实例'
+  WHEN 10040 THEN '人工审核'
+  ELSE `name`
+END
+WHERE `menu_id` IN (
+  10000, 10001, 10002, 10003, 10004, 10005, 10006, 10007, 10008, 10009,
+  10010, 10011, 10012, 10013, 10014, 10015, 10016, 10017, 10018, 10019,
+  10020, 10021, 10022, 10023, 10024, 10025, 10026, 10027, 10028, 10030, 10040
+);

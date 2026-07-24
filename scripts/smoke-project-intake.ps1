@@ -37,6 +37,7 @@ $runDirectory = (Resolve-Path '.tools\run').Path
 $encryptedPasswordFile = Join-Path $runDirectory 'project-smoke-encrypted-password.txt'
 $materialFile = Join-Path $runDirectory 'project-smoke-material.md'
 $uiImageFile = Join-Path $runDirectory 'project-smoke-ui.png'
+$frontendZipFile = Join-Path $runDirectory 'project-smoke-frontend.zip'
 $encryptScript = (Resolve-Path 'scripts\encrypt-password.cjs').Path
 
 try {
@@ -62,6 +63,12 @@ try {
 	Assert-True ($currentUser.permissions -contains 'workflow_ui_generate') 'login authority lacks UI generation permission'
 	Assert-True ($currentUser.permissions -contains 'workflow_ui_upload') 'login authority lacks UI upload permission'
 	Assert-True ($currentUser.permissions -contains 'workflow_ui_review') 'login authority lacks UI review permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_frontend_edit') 'login authority lacks frontend logic edit permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_frontend_generate') 'login authority lacks frontend generation permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_frontend_review') 'login authority lacks frontend review permission'
+	$menuJson = Invoke-WorkflowApi Get '/menu' | ConvertTo-Json -Depth 20 -Compress
+	Assert-True ($menuJson -like '*"name":"工作流管理"*') 'workflow menu name is missing or has an invalid charset'
+	Assert-True ($menuJson -like '*"name":"研发项目"*') 'project menu name is missing or has an invalid charset'
 
 	$stamp = Get-Date -Format 'yyyyMMddHHmmss'
 	$project = Invoke-WorkflowApi Post '/workflow/projects' @{
@@ -154,8 +161,54 @@ try {
 	Assert-True ($uiCompleted.uiDesigns.Count -eq $modules.Count) 'module UI design count mismatch'
 	Assert-True (($uiCompleted.uiDesigns | Where-Object status -ne 'APPROVED').Count -eq 0) 'not all module UI designs reached APPROVED'
 
-	Write-Host "Project intake, prototype and UI design regression passed for project $projectId."
+	[void](Invoke-WorkflowApi Put "/workflow/modules/$($modules[0].id)/frontend-spec" @{
+		logic = '加载列表后支持筛选；保存失败时保留表单数据并展示错误信息。'
+	})
+	$firstFrontend = Invoke-WorkflowApi Post "/workflow/modules/$($modules[0].id)/frontend-codes/generate"
+	Assert-True ($firstFrontend.versionNo -eq 'V1') "first frontend code version is $($firstFrontend.versionNo)"
+	Assert-True ($firstFrontend.generator -eq 'RULE_BASED_VUE3_V1') "unexpected frontend generator $($firstFrontend.generator)"
+	Assert-True ($firstFrontend.fileCount -eq 4) "frontend V1 file count is $($firstFrontend.fileCount)"
+	[void](Invoke-WorkflowApi Post "/workflow/frontend-codes/$($firstFrontend.versionId)/reviews" @{
+		action = 'REJECT'
+		comment = 'smoke requires revised interaction feedback'
+	})
+	[void](Invoke-WorkflowApi Put "/workflow/modules/$($modules[0].id)/frontend-spec" @{
+		logic = '加载列表后支持筛选；保存成功或失败都要给出明确反馈，失败时保留表单数据。'
+	})
+	$secondFrontend = Invoke-WorkflowApi Post "/workflow/modules/$($modules[0].id)/frontend-codes/generate"
+	Assert-True ($secondFrontend.versionNo -eq 'V2') "regenerated frontend code version is $($secondFrontend.versionNo)"
+	$frontendDetail = Invoke-WorkflowApi Get "/workflow/frontend-codes/$($secondFrontend.versionId)"
+	Assert-True ($frontendDetail.generator -eq 'RULE_BASED_VUE3_V1') 'frontend detail generator mismatch'
+	Assert-True ($frontendDetail.files.Count -eq 4) 'frontend detail file count mismatch'
+	Assert-True ($frontendDetail.previewHtml -like '*<!doctype html>*') 'frontend detail does not contain preview HTML'
+	Assert-True (($frontendDetail.files.path | Where-Object { $_ -like 'src/views/workflow/*/index.vue' }).Count -eq 1) `
+		'frontend package does not contain a Vue page'
+	Invoke-WebRequest -Method Get -Uri "$BaseUrl/workflow/frontend-codes/$($secondFrontend.versionId)/download" `
+		-Headers @{ Authorization = "Bearer $script:AccessToken" } -OutFile $frontendZipFile
+	Assert-True ((Get-Item $frontendZipFile).Length -gt 20) 'frontend ZIP download is empty'
+	[void](Invoke-WorkflowApi Post "/workflow/frontend-codes/$($secondFrontend.versionId)/reviews" @{
+		action = 'APPROVE'
+		comment = 'smoke approved frontend V2'
+	})
+	for ($index = 1; $index -lt $modules.Count; $index++) {
+		[void](Invoke-WorkflowApi Put "/workflow/modules/$($modules[$index].id)/frontend-spec" @{
+			logic = '按照已审核 UI 与功能点验收标准实现页面交互。'
+		})
+		$frontend = Invoke-WorkflowApi Post "/workflow/modules/$($modules[$index].id)/frontend-codes/generate"
+		[void](Invoke-WorkflowApi Post "/workflow/frontend-codes/$($frontend.versionId)/reviews" @{
+			action = 'APPROVE'
+			comment = 'smoke approved frontend code'
+		})
+	}
+	$frontendCompleted = Invoke-WorkflowApi Get "/workflow/projects/$projectId/workspace"
+	Assert-True ($frontendCompleted.project.currentStage -eq 'BACKEND_READY') `
+		"project stage is $($frontendCompleted.project.currentStage), expected BACKEND_READY"
+	Assert-True ($frontendCompleted.frontendCodes.Count -eq $modules.Count) 'module frontend code count mismatch'
+	Assert-True (($frontendCompleted.frontendCodes | Where-Object status -ne 'APPROVED').Count -eq 0) `
+		'not all module frontend code versions reached APPROVED'
+
+	Write-Host "Project intake through frontend code review regression passed for project $projectId."
 }
 finally {
-	Remove-Item $encryptedPasswordFile, $materialFile, $uiImageFile -Force -ErrorAction SilentlyContinue
+	Remove-Item $encryptedPasswordFile, $materialFile, $uiImageFile, $frontendZipFile -Force -ErrorAction SilentlyContinue
 }
