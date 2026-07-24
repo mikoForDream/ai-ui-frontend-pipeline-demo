@@ -3,15 +3,22 @@ package com.pig4cloud.pig.workflow.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.pig4cloud.pig.common.core.exception.CheckedException;
 import com.pig4cloud.pig.workflow.dto.WorkflowMaterialSummary;
+import com.pig4cloud.pig.workflow.dto.ModulePrototypeSummary;
 import com.pig4cloud.pig.workflow.dto.WorkflowProjectWorkspace;
+import com.pig4cloud.pig.workflow.entity.WorkflowArtifact;
+import com.pig4cloud.pig.workflow.entity.WorkflowArtifactVersion;
 import com.pig4cloud.pig.workflow.entity.WorkflowFeature;
 import com.pig4cloud.pig.workflow.entity.WorkflowMaterial;
 import com.pig4cloud.pig.workflow.entity.WorkflowModule;
 import com.pig4cloud.pig.workflow.entity.WorkflowProject;
+import com.pig4cloud.pig.workflow.entity.WorkflowProductSpec;
+import com.pig4cloud.pig.workflow.mapper.WorkflowArtifactMapper;
+import com.pig4cloud.pig.workflow.mapper.WorkflowArtifactVersionMapper;
 import com.pig4cloud.pig.workflow.mapper.WorkflowFeatureMapper;
 import com.pig4cloud.pig.workflow.mapper.WorkflowMaterialMapper;
 import com.pig4cloud.pig.workflow.mapper.WorkflowModuleMapper;
 import com.pig4cloud.pig.workflow.mapper.WorkflowProjectMapper;
+import com.pig4cloud.pig.workflow.mapper.WorkflowProductSpecMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +36,9 @@ public class WorkflowProjectService {
 	private final WorkflowMaterialMapper materialMapper;
 	private final WorkflowModuleMapper moduleMapper;
 	private final WorkflowFeatureMapper featureMapper;
+	private final WorkflowArtifactMapper artifactMapper;
+	private final WorkflowArtifactVersionMapper artifactVersionMapper;
+	private final WorkflowProductSpecMapper productSpecMapper;
 
 	@Transactional(rollbackFor = Exception.class)
 	public WorkflowProject create(WorkflowProject project) {
@@ -81,7 +91,31 @@ public class WorkflowProjectService {
 			.eq(WorkflowFeature::getProjectId, projectId)
 			.orderByAsc(WorkflowFeature::getModuleId)
 			.orderByAsc(WorkflowFeature::getCreateTime));
-		return new WorkflowProjectWorkspace(project, materials, modules, features);
+		List<ModulePrototypeSummary> prototypes = artifactMapper.selectList(Wrappers.<WorkflowArtifact>lambdaQuery()
+			.eq(WorkflowArtifact::getProjectId, projectId)
+			.eq(WorkflowArtifact::getArtifactType, "PROTOTYPE")
+			.isNotNull(WorkflowArtifact::getCurrentVersionId))
+			.stream()
+			.map(this::prototypeSummary)
+			.filter(java.util.Objects::nonNull)
+			.toList();
+		WorkflowProductSpec frozenSpec = productSpecMapper.selectOne(Wrappers.<WorkflowProductSpec>lambdaQuery()
+			.eq(WorkflowProductSpec::getProjectId, projectId)
+			.eq(WorkflowProductSpec::getStatus, "FROZEN")
+			.orderByDesc(WorkflowProductSpec::getCreateTime)
+			.last("LIMIT 1"));
+		return new WorkflowProjectWorkspace(project, materials, modules, features, prototypes,
+				frozenSpec == null ? null : frozenSpec.getVersionNo());
+	}
+
+	private ModulePrototypeSummary prototypeSummary(WorkflowArtifact artifact) {
+		WorkflowArtifactVersion version = artifactVersionMapper.selectById(artifact.getCurrentVersionId());
+		if (version == null) {
+			return null;
+		}
+		return new ModulePrototypeSummary(artifact.getId(), artifact.getModuleId(), version.getId(),
+				version.getVersionNo(), version.getStatus(), version.getSourceType(), version.getReviewComment(),
+				version.getCreateTime());
 	}
 
 	public WorkflowProject requireProject(Long id) {

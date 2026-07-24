@@ -126,6 +126,31 @@
 							</el-table>
 						</div>
 					</el-tab-pane>
+					<el-tab-pane :label="`原型 ${workspace.prototypes.length}`" name="prototypes">
+						<div class="toolbar">
+							<div><strong>模块原型审核</strong><span>按模块生成和确认交互流程</span></div>
+							<el-tag :type="workspace.frozenSpecVersion ? 'success' : 'info'">需求规格 {{ workspace.frozenSpecVersion || '未冻结' }}</el-tag>
+						</div>
+						<el-empty v-if="!workspace.modules.length" description="功能点审核完成后可按模块生成原型" />
+						<el-table v-else :data="workspace.modules" border>
+							<el-table-column prop="moduleCode" label="模块编号" width="125" />
+							<el-table-column prop="name" label="模块" min-width="180" />
+							<el-table-column label="功能点" width="90" align="center"><template #default="{ row }">{{ moduleFeatures(row.id).length }}</template></el-table-column>
+							<el-table-column label="原型版本" width="110"><template #default="{ row }">{{ modulePrototype(row.id)?.versionNo || '-' }}</template></el-table-column>
+							<el-table-column label="审核状态" width="120"><template #default="{ row }"><el-tag :type="prototypeStatusType(modulePrototype(row.id)?.status)">{{ prototypeStatusLabel(modulePrototype(row.id)?.status) }}</el-tag></template></el-table-column>
+							<el-table-column label="审核意见" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ modulePrototype(row.id)?.reviewComment || '-' }}</template></el-table-column>
+							<el-table-column label="操作" width="270" fixed="right" align="center">
+								<template #default="{ row }">
+									<el-button v-if="canGeneratePrototype(row.status)" v-auth="'workflow_prototype_generate'" text type="primary" :loading="prototypeBusyId === row.id" @click="generatePrototype(row)">{{ modulePrototype(row.id) ? '重新生成' : '生成原型' }}</el-button>
+									<el-button v-if="modulePrototype(row.id)" text icon="View" @click="openPrototype(row.name, modulePrototype(row.id))">预览</el-button>
+									<template v-if="modulePrototype(row.id)?.status === 'PENDING_REVIEW'">
+										<el-button v-auth="'workflow_prototype_review'" text type="success" @click="reviewPrototype(row.name, modulePrototype(row.id), 'APPROVE')">通过</el-button>
+										<el-button v-auth="'workflow_prototype_review'" text type="danger" @click="reviewPrototype(row.name, modulePrototype(row.id), 'REJECT')">驳回</el-button>
+									</template>
+								</template>
+							</el-table-column>
+						</el-table>
+					</el-tab-pane>
 				</el-tabs>
 			</div>
 		</el-dialog>
@@ -139,6 +164,12 @@
 			</el-form>
 			<template #footer><el-button @click="featureEditVisible = false">取消</el-button><el-button type="primary" :loading="submitting" @click="submitFeatureEdit">保存并提交审核</el-button></template>
 		</el-dialog>
+
+		<el-dialog v-model="prototypeVisible" :title="prototypeTitle" width="94%" top="3vh" append-to-body destroy-on-close>
+			<div v-loading="prototypeLoading" class="prototype-preview">
+				<iframe v-if="prototypeHtml" :srcdoc="prototypeHtml" sandbox="allow-scripts allow-forms" title="模块交互原型预览" />
+			</div>
+		</el-dialog>
 	</div>
 </template>
 
@@ -147,14 +178,18 @@ import type { FormInstance, FormRules, TagProps, UploadRequestOptions } from 'el
 import {
 	analyzeProjectMaterials,
 	createProject,
+	generateModulePrototype,
+	getModulePrototype,
 	getProjectPage,
 	getProjectWorkspace,
 	parseProjectMaterial,
 	reviewProjectFeature,
+	reviewModulePrototype,
 	updateProjectFeature,
 	uploadProjectMaterial,
 	type WorkflowFeature,
 	type WorkflowMaterial,
+	type ModulePrototype,
 	type WorkflowProject,
 	type WorkflowProjectWorkspace,
 } from '/@/api/workflow';
@@ -163,7 +198,7 @@ import { downBlobFile } from '/@/utils/other';
 
 const acceptedFiles = '.txt,.md,.csv,.json,.yaml,.yml,.doc,.docx,.xls,.xlsx,.pdf,.png,.jpg,.jpeg,.ppt,.pptx';
 const stageOptions = [
-	['MATERIAL_COLLECTION', '资料收集'], ['FEATURE_REVIEW', '功能点审核'], ['PROTOTYPE_READY', '原型准备'], ['UI_DESIGN', 'UI 设计'],
+	['MATERIAL_COLLECTION', '资料收集'], ['FEATURE_REVIEW', '功能点审核'], ['PROTOTYPE_READY', '原型准备'], ['PROTOTYPE_REVIEW', '原型审核'], ['UI_READY', 'UI 准备'], ['UI_DESIGN', 'UI 设计'],
 	['FRONTEND_DEVELOPMENT', '前端开发'], ['BACKEND_DEVELOPMENT', '后端开发'], ['INTEGRATION', '联调测试'], ['DELIVERY', '交付'],
 ] as const;
 const loading = ref(false);
@@ -177,18 +212,24 @@ const pagination = reactive({ current: 1, size: 10, total: 0 });
 const createVisible = ref(false);
 const workspaceVisible = ref(false);
 const featureEditVisible = ref(false);
+const prototypeVisible = ref(false);
+const prototypeLoading = ref(false);
+const prototypeBusyId = ref('');
+const prototypeHtml = ref('');
+const prototypeTitle = ref('模块交互原型');
 const activeTab = ref('materials');
 const createFormRef = ref<FormInstance>();
 const featureFormRef = ref<FormInstance>();
 const createForm = reactive({ name: '', projectCode: '', techStack: 'Vue 3 + Spring Boot + MySQL', description: '' });
 const featureForm = reactive<Partial<WorkflowFeature>>({});
-const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [] });
+const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [], prototypes: [] });
 const createRules: FormRules = {
 	name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
 	projectCode: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
 };
 const featureRules: FormRules = { name: [{ required: true, message: '请输入功能点名称', trigger: 'blur' }] };
-const activeStage = computed(() => Math.max(0, stageOptions.findIndex(([value]) => value === workspace.project?.currentStage)));
+const stageStep: Record<string, number> = { MATERIAL_COLLECTION: 0, FEATURE_REVIEW: 1, PROTOTYPE_READY: 2, PROTOTYPE_REVIEW: 2, UI_READY: 3, UI_DESIGN: 3, FRONTEND_DEVELOPMENT: 4, BACKEND_DEVELOPMENT: 5, INTEGRATION: 6, DELIVERY: 7 };
+const activeStage = computed(() => stageStep[workspace.project?.currentStage] ?? 0);
 const approvedCount = computed(() => workspace.features.filter((item) => item.status === 'APPROVED').length);
 const canAnalyze = computed(() => workspace.materials.some((item) => item.parseStatus === 'PARSED') && workspace.features.length === 0);
 
@@ -200,6 +241,10 @@ const featureStatusType = (value: string): TagProps['type'] => ({ APPROVED: 'suc
 const priorityLabel = (value: string) => ({ HIGH: '高', MEDIUM: '中', LOW: '低' })[value] || value;
 const formatSize = (size: number) => size < 1024 * 1024 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`;
 const moduleFeatures = (moduleId: string) => workspace.features.filter((item) => item.moduleId === moduleId);
+const modulePrototype = (moduleId: string) => workspace.prototypes.find((item) => item.moduleId === moduleId);
+const prototypeStatusLabel = (value?: string) => ({ PENDING_REVIEW: '待审核', APPROVED: '已通过', REJECTED: '已驳回', RETURNED: '已退回' })[value || ''] || '未生成';
+const prototypeStatusType = (value?: string): TagProps['type'] => ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' })[value || ''] as TagProps['type'] || 'info';
+const canGeneratePrototype = (status: string) => ['REQUIREMENT_APPROVED', 'PROTOTYPE_REVISION'].includes(status);
 
 const loadData = async () => {
 	loading.value = true;
@@ -268,6 +313,38 @@ const reviewFeature = async (feature: WorkflowFeature, action: 'APPROVE' | 'REJE
 	}
 	await reviewProjectFeature(feature.id, { action, comment }); useMessage().success(action === 'APPROVE' ? '功能点已通过' : '功能点已驳回'); await loadWorkspace(); await loadData();
 };
+const generatePrototype = async (module: WorkflowProjectWorkspace['modules'][number]) => {
+	try { await useMessageBox().confirm(`确认根据已冻结功能点生成“${module.name}”的交互原型新版本吗？`); } catch { return; }
+	prototypeBusyId.value = module.id;
+	try {
+		await generateModulePrototype(module.id);
+		useMessage().success('模块原型已生成并提交审核');
+		await loadWorkspace(); await loadData();
+	} finally { prototypeBusyId.value = ''; }
+};
+const openPrototype = async (moduleName: string, prototype?: ModulePrototype) => {
+	if (!prototype) return;
+	prototypeVisible.value = true; prototypeLoading.value = true; prototypeHtml.value = '';
+	prototypeTitle.value = `${moduleName} · ${prototype.versionNo}`;
+	try { prototypeHtml.value = (await getModulePrototype(prototype.versionId)).data.html; }
+	finally { prototypeLoading.value = false; }
+};
+const reviewPrototype = async (moduleName: string, prototype: ModulePrototype | undefined, action: 'APPROVE' | 'REJECT') => {
+	if (!prototype) return;
+	let comment = '';
+	if (action === 'REJECT') {
+		try { const result = await useMessageBox().prompt(`填写“${moduleName}”原型的修改意见`, '驳回原型', { inputValidator: (value) => Boolean(value?.trim()) || '必须填写修改意见' }); comment = result.value; }
+		catch { return; }
+	} else {
+		try { await useMessageBox().confirm(`确认通过“${moduleName}”的 ${prototype.versionNo} 原型吗？`); } catch { return; }
+	}
+	prototypeBusyId.value = prototype.moduleId;
+	try {
+		await reviewModulePrototype(prototype.versionId, { action, comment });
+		useMessage().success(action === 'APPROVE' ? '模块原型已通过' : '模块原型已驳回');
+		await loadWorkspace(); await loadData();
+	} finally { prototypeBusyId.value = ''; }
+};
 
 onMounted(loadData);
 </script>
@@ -290,6 +367,8 @@ onMounted(loadData);
 .module-section { margin-bottom: 22px; }
 .module-heading { align-items: center; padding: 12px 14px; border-left: 4px solid var(--el-color-primary); background: var(--el-fill-color-light); }
 .module-heading h3 { font-size: 16px; }
+.prototype-preview { height: calc(94vh - 120px); min-height: 520px; background: var(--el-fill-color-light); }
+.prototype-preview iframe { width: 100%; height: 100%; border: 1px solid var(--el-border-color); background: #fff; }
 @media (max-width: 900px) {
 	.page-heading, .toolbar, .workspace-header { flex-direction: column; }
 	.toolbar-actions { width: 100%; flex-wrap: wrap; }

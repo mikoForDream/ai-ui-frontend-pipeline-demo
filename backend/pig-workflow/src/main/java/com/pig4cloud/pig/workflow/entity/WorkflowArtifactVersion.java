@@ -40,4 +40,6 @@ public class WorkflowArtifactVersion extends BaseEntity {
 
 	private String status;
 
+	private String reviewComment;
+
 }
