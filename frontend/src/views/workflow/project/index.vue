@@ -6,8 +6,16 @@
 					<h2>研发项目</h2>
 					<p>从资料收集、功能点审核开始，逐步推进原型、UI 和全栈开发。</p>
 				</div>
-				<el-button v-auth="'workflow_project_edit'" type="primary" icon="Plus" @click="openCreate">新建项目</el-button>
+				<div class="heading-actions">
+					<el-tag :type="aiModelStatus?.configured ? 'success' : 'danger'" effect="plain">
+						{{ aiModelStatus?.configured ? `${aiModelStatus.model} 已配置` : 'AI 未配置' }}
+					</el-tag>
+					<el-button v-auth="'workflow_material_analyze'" icon="Connection" :loading="checkingAi" :disabled="!aiModelStatus?.configured" @click="checkAiConnectivity">检测连接</el-button>
+					<el-button v-auth="'workflow_project_edit'" type="primary" icon="Plus" @click="openCreate">新建项目</el-button>
+				</div>
 			</div>
+			<el-alert v-if="aiModelStatus && !aiModelStatus.configured" class="ai-config-alert" type="warning" :closable="false" show-icon
+				title="AI 模型服务未配置，生成操作暂不可用。请在后端设置 OPENAI_API_KEY 后重启服务。" />
 
 			<el-form :inline="true" :model="query" class="search-form">
 				<el-form-item label="项目名称"><el-input v-model="query.name" clearable placeholder="输入名称" @keyup.enter="loadData" /></el-form-item>
@@ -83,7 +91,7 @@
 								<el-button v-auth="'workflow_material_analyze'" type="primary" icon="MagicStick" :loading="analyzing" :disabled="!canAnalyze" @click="analyzeMaterials">分析并生成功能点</el-button>
 							</div>
 						</div>
-						<el-alert type="info" :closable="false" show-icon title="文本、Markdown、Word 和 Excel 会立即抽取内容；PDF、图片和演示文稿先保存，等待 AI 解析器处理。" />
+						<el-alert type="info" :closable="false" show-icon title="文本、Markdown、Word 和 Excel 会立即抽取内容；PDF、图片和演示文稿由已配置的 AI 模型解析。" />
 						<el-table :data="workspace.materials" border class="data-table">
 							<el-table-column prop="originalName" label="文件名" min-width="240" show-overflow-tooltip />
 							<el-table-column prop="extension" label="类型" width="80" align="center"><template #default="{ row }">{{ row.extension.toUpperCase() }}</template></el-table-column>
@@ -93,7 +101,9 @@
 							<el-table-column label="操作" width="160" fixed="right" align="center">
 								<template #default="{ row }">
 									<el-button text type="primary" icon="Download" @click="downloadMaterial(row)">下载</el-button>
-									<el-button v-if="row.parseStatus === 'FAILED'" text type="warning" @click="reparse(row)">重试</el-button>
+									<el-button v-if="['FAILED', 'READY_FOR_AI'].includes(row.parseStatus)" text type="warning" :disabled="!aiModelStatus?.configured" @click="reparse(row)">
+										{{ row.parseStatus === 'READY_FOR_AI' ? 'AI 解析' : '重试' }}
+									</el-button>
 								</template>
 							</el-table-column>
 						</el-table>
@@ -166,7 +176,7 @@
 							<el-table-column label="审核意见" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ moduleUiDesign(row.id)?.reviewComment || '-' }}</template></el-table-column>
 							<el-table-column label="操作" width="410" fixed="right" align="center">
 								<template #default="{ row }">
-									<el-button v-if="canCreateUiDesign(row.status)" v-auth="'workflow_ui_generate'" text type="primary" icon="MagicStick" :loading="uiBusyId === row.id" @click="generateUiDesign(row)">{{ moduleUiDesign(row.id) ? '重新生成' : '生成草稿' }}</el-button>
+									<el-button v-if="canGenerateUiDesign(row.status)" v-auth="'workflow_ui_generate'" text type="primary" icon="MagicStick" :loading="uiBusyId === row.id" @click="generateUiDesign(row)">{{ moduleUiDesign(row.id) ? '重新生成' : '生成草稿' }}</el-button>
 									<el-upload v-if="canCreateUiDesign(row.status)" v-auth="'workflow_ui_upload'" class="inline-upload" :show-file-list="false" :http-request="(options) => uploadUiDesign(row, options)" accept=".png,.jpg,.jpeg,.webp">
 										<el-button text type="primary" icon="Upload" :loading="uiBusyId === row.id">上传设计图</el-button>
 									</el-upload>
@@ -197,12 +207,40 @@
 							<el-table-column label="操作" width="360" fixed="right" align="center">
 								<template #default="{ row }">
 									<el-button v-if="canDevelopFrontend(row.status)" v-auth="'workflow_frontend_edit'" text type="primary" icon="Edit" @click="editFrontendLogic(row)">实现逻辑</el-button>
-									<el-button v-if="canDevelopFrontend(row.status)" v-auth="'workflow_frontend_generate'" text type="primary" icon="MagicStick" :loading="frontendBusyId === row.id" @click="generateFrontendCode(row)">{{ moduleFrontendCode(row.id) ? '重新生成' : '生成代码' }}</el-button>
+									<el-button v-if="canGenerateFrontend(row.status)" v-auth="'workflow_frontend_generate'" text type="primary" icon="MagicStick" :loading="frontendBusyId === row.id" @click="generateFrontendCode(row)">{{ moduleFrontendCode(row.id) ? '重新生成' : '生成代码' }}</el-button>
 									<el-button v-if="moduleFrontendCode(row.id)" text icon="View" @click="openFrontendCode(row.name, moduleFrontendCode(row.id))">查看</el-button>
 									<el-button v-if="moduleFrontendCode(row.id)" text icon="Download" @click="downloadFrontendCode(row.name, moduleFrontendCode(row.id))">下载</el-button>
 									<template v-if="moduleFrontendCode(row.id)?.status === 'PENDING_REVIEW'">
 										<el-button v-auth="'workflow_frontend_review'" text type="success" @click="reviewFrontendCode(row.name, moduleFrontendCode(row.id), 'APPROVE')">通过</el-button>
 										<el-button v-auth="'workflow_frontend_review'" text type="danger" @click="reviewFrontendCode(row.name, moduleFrontendCode(row.id), 'REJECT')">驳回</el-button>
+									</template>
+								</template>
+							</el-table-column>
+						</el-table>
+					</el-tab-pane>
+					<el-tab-pane :label="`后端开发 ${workspace.backendCodes.length}`" name="backend-codes">
+						<div class="toolbar">
+							<div><strong>模块后端开发与代码审核</strong><span>补充后端逻辑后生成 Java/Spring Boot 代码包</span></div>
+							<el-tag :type="backendApprovedCount === workspace.modules.length && backendApprovedCount > 0 ? 'success' : 'warning'">已通过 {{ backendApprovedCount }} / {{ workspace.modules.length }}</el-tag>
+						</div>
+						<el-empty v-if="!workspace.modules.length" description="前端代码全部通过后可进入后端开发" />
+						<el-table v-else :data="workspace.modules" border>
+							<el-table-column prop="moduleCode" label="模块编号" width="125" />
+							<el-table-column prop="name" label="模块" min-width="150" />
+							<el-table-column label="后端实现逻辑" min-width="240" show-overflow-tooltip><template #default="{ row }">{{ row.backendLogic || '未补充，按功能点验收标准生成' }}</template></el-table-column>
+							<el-table-column label="代码版本" width="100"><template #default="{ row }">{{ moduleBackendCode(row.id)?.versionNo || '-' }}</template></el-table-column>
+							<el-table-column label="文件" width="70" align="center"><template #default="{ row }">{{ moduleBackendCode(row.id)?.fileCount ?? '-' }}</template></el-table-column>
+							<el-table-column label="审核状态" width="110"><template #default="{ row }"><el-tag :type="prototypeStatusType(moduleBackendCode(row.id)?.status)">{{ prototypeStatusLabel(moduleBackendCode(row.id)?.status) }}</el-tag></template></el-table-column>
+							<el-table-column label="接口摘要" min-width="220" show-overflow-tooltip><template #default="{ row }">{{ moduleBackendCode(row.id)?.apiSummary || '-' }}</template></el-table-column>
+							<el-table-column label="操作" width="390" fixed="right" align="center">
+								<template #default="{ row }">
+									<el-button v-if="canDevelopBackend(row.status)" v-auth="'workflow_backend_edit'" text type="primary" icon="Edit" @click="editBackendLogic(row)">实现逻辑</el-button>
+									<el-button v-if="canGenerateBackend(row.status)" v-auth="'workflow_backend_generate'" text type="primary" icon="MagicStick" :loading="backendBusyId === row.id" @click="generateBackendCode(row)">{{ moduleBackendCode(row.id) ? '重新生成' : '生成代码' }}</el-button>
+									<el-button v-if="moduleBackendCode(row.id)" text icon="View" @click="openBackendCode(row.name, moduleBackendCode(row.id))">查看</el-button>
+									<el-button v-if="moduleBackendCode(row.id)" text icon="Download" @click="downloadBackendCode(row.name, moduleBackendCode(row.id))">下载</el-button>
+									<template v-if="moduleBackendCode(row.id)?.status === 'PENDING_REVIEW'">
+										<el-button v-auth="'workflow_backend_review'" text type="success" @click="reviewBackendCode(row.name, moduleBackendCode(row.id), 'APPROVE')">通过</el-button>
+										<el-button v-auth="'workflow_backend_review'" text type="danger" @click="reviewBackendCode(row.name, moduleBackendCode(row.id), 'REJECT')">驳回</el-button>
 									</template>
 								</template>
 							</el-table-column>
@@ -265,6 +303,17 @@
 				</el-tabs>
 			</div>
 		</el-dialog>
+
+		<el-dialog v-model="backendLogicVisible" title="模块后端实现逻辑" width="680px" append-to-body destroy-on-close>
+			<el-form label-position="top"><el-form-item :label="backendLogicModule?.name || '模块'"><el-input v-model="backendLogicText" type="textarea" :rows="10" maxlength="10000" show-word-limit placeholder="补充接口、权限、数据模型、事务、校验、异常和外部依赖等后端实现要求；留空时按功能点验收标准生成。" /></el-form-item></el-form>
+			<template #footer><el-button @click="backendLogicVisible = false">取消</el-button><el-button type="primary" :loading="backendBusyId === backendLogicModule?.id" @click="saveBackendLogic">保存</el-button></template>
+		</el-dialog>
+
+		<el-dialog v-model="backendCodeVisible" :title="backendCodeTitle" width="96%" top="2vh" append-to-body destroy-on-close>
+			<div v-loading="backendCodeLoading" class="frontend-code-review"><div class="code-summary"><el-tag effect="plain">{{ backendCodeDetail?.generator }}</el-tag><span>{{ backendCodeDetail?.files.length || 0 }} 个文件</span></div>
+				<el-tabs v-if="backendCodeDetail" v-model="backendCodeTab" class="code-tabs"><el-tab-pane label="接口摘要" name="summary"><pre class="logic-content">{{ backendCodeDetail.apiSummary }}</pre></el-tab-pane><el-tab-pane label="代码文件" name="files"><div class="code-browser"><el-menu :default-active="backendSelectedCodePath" @select="(path) => backendSelectedCodePath = path"><el-menu-item v-for="file in backendCodeDetail.files" :key="file.path" :index="file.path"><span>{{ file.path }}</span></el-menu-item></el-menu><div class="code-content"><div>{{ backendSelectedCodeFile?.path }}</div><pre><code>{{ backendSelectedCodeFile?.content }}</code></pre></div></div></el-tab-pane><el-tab-pane label="实现逻辑" name="logic"><pre class="logic-content">{{ backendCodeDetail.backendLogic || '未补充' }}</pre></el-tab-pane></el-tabs>
+			</div>
+		</el-dialog>
 	</div>
 </template>
 
@@ -272,14 +321,18 @@
 import type { FormInstance, FormRules, TagProps, UploadRequestOptions } from 'element-plus';
 import {
 	analyzeProjectMaterials,
+	checkAiModelConnectivity,
 	createProject,
 	generateModulePrototype,
 	generateModuleUiDesign,
 	generateModuleFrontendCode,
+	generateModuleBackendCode,
 	getModuleFrontendCode,
+	getModuleBackendCode,
 	getModulePrototype,
 	getModuleUiDesign,
 	getModuleUiDesignContent,
+	getAiModelStatus,
 	getProjectPage,
 	getProjectWorkspace,
 	parseProjectMaterial,
@@ -288,16 +341,21 @@ import {
 	reviewModuleUiDesign,
 	reviewModuleFrontendCode,
 	saveFrontendDevelopmentSpec,
+	saveBackendDevelopmentSpec,
 	updateProjectFeature,
 	uploadModuleUiDesign,
 	uploadProjectMaterial,
+	reviewModuleBackendCode,
 	type WorkflowFeature,
 	type WorkflowMaterial,
 	type ModulePrototype,
 	type ModuleUiDesign,
 	type ModuleFrontendCode,
 	type ModuleFrontendCodeDetail,
+	type ModuleBackendCode,
+	type ModuleBackendCodeDetail,
 	type GeneratedCodeFile,
+	type AiModelStatus,
 	type WorkflowProject,
 	type WorkflowProjectWorkspace,
 } from '/@/api/workflow';
@@ -307,13 +365,15 @@ import { downBlobFile } from '/@/utils/other';
 const acceptedFiles = '.txt,.md,.csv,.json,.yaml,.yml,.doc,.docx,.xls,.xlsx,.pdf,.png,.jpg,.jpeg,.ppt,.pptx';
 const stageOptions = [
 	['MATERIAL_COLLECTION', '资料收集'], ['FEATURE_REVIEW', '功能点审核'], ['PROTOTYPE_READY', '原型准备'], ['PROTOTYPE_REVIEW', '原型审核'], ['UI_READY', 'UI 准备'], ['UI_DESIGN', 'UI 设计'],
-	['UI_REVIEW', 'UI 审核'], ['FRONTEND_READY', '前端开发准备'], ['FRONTEND_DEVELOPMENT', '前端开发'], ['FRONTEND_REVIEW', '前端代码审核'], ['BACKEND_READY', '后端开发准备'], ['BACKEND_DEVELOPMENT', '后端开发'], ['INTEGRATION', '联调测试'], ['DELIVERY', '交付'],
+	['UI_REVIEW', 'UI 审核'], ['FRONTEND_READY', '前端开发准备'], ['FRONTEND_DEVELOPMENT', '前端开发'], ['FRONTEND_REVIEW', '前端代码审核'], ['BACKEND_READY', '后端开发准备'], ['BACKEND_DEVELOPMENT', '后端开发'], ['BACKEND_REVIEW', '后端代码审核'], ['INTEGRATION', '联调测试'], ['DELIVERY', '交付'],
 ] as const;
 const loading = ref(false);
 const submitting = ref(false);
 const uploading = ref(false);
 const analyzing = ref(false);
 const workspaceLoading = ref(false);
+const checkingAi = ref(false);
+const aiModelStatus = ref<AiModelStatus>();
 const rows = ref<WorkflowProject[]>([]);
 const query = reactive({ name: '', status: '' });
 const pagination = reactive({ current: 1, size: 10, total: 0 });
@@ -341,24 +401,36 @@ const frontendCodeTitle = ref('模块前端代码');
 const frontendCodeDetail = ref<ModuleFrontendCodeDetail>();
 const frontendCodeTab = ref('preview');
 const selectedCodePath = ref('');
+const backendBusyId = ref('');
+const backendLogicVisible = ref(false);
+const backendLogicModule = ref<WorkflowProjectWorkspace['modules'][number]>();
+const backendLogicText = ref('');
+const backendCodeVisible = ref(false);
+const backendCodeLoading = ref(false);
+const backendCodeTitle = ref('模块后端代码');
+const backendCodeDetail = ref<ModuleBackendCodeDetail>();
+const backendCodeTab = ref('summary');
+const backendSelectedCodePath = ref('');
 const activeTab = ref('materials');
 const createFormRef = ref<FormInstance>();
 const featureFormRef = ref<FormInstance>();
 const createForm = reactive({ name: '', projectCode: '', techStack: 'Vue 3 + Spring Boot + MySQL', description: '' });
 const featureForm = reactive<Partial<WorkflowFeature>>({});
-const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [], prototypes: [], uiDesigns: [], frontendCodes: [] });
+const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [], prototypes: [], uiDesigns: [], frontendCodes: [], backendCodes: [] });
 const createRules: FormRules = {
 	name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
 	projectCode: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
 };
 const featureRules: FormRules = { name: [{ required: true, message: '请输入功能点名称', trigger: 'blur' }] };
-const stageStep: Record<string, number> = { MATERIAL_COLLECTION: 0, FEATURE_REVIEW: 1, PROTOTYPE_READY: 2, PROTOTYPE_REVIEW: 2, UI_READY: 3, UI_DESIGN: 3, UI_REVIEW: 3, FRONTEND_READY: 4, FRONTEND_DEVELOPMENT: 4, FRONTEND_REVIEW: 4, BACKEND_READY: 5, BACKEND_DEVELOPMENT: 5, INTEGRATION: 6, DELIVERY: 7 };
+const stageStep: Record<string, number> = { MATERIAL_COLLECTION: 0, FEATURE_REVIEW: 1, PROTOTYPE_READY: 2, PROTOTYPE_REVIEW: 2, UI_READY: 3, UI_DESIGN: 3, UI_REVIEW: 3, FRONTEND_READY: 4, FRONTEND_DEVELOPMENT: 4, FRONTEND_REVIEW: 4, BACKEND_READY: 5, BACKEND_DEVELOPMENT: 5, BACKEND_REVIEW: 5, INTEGRATION: 6, DELIVERY: 7 };
 const activeStage = computed(() => stageStep[workspace.project?.currentStage] ?? 0);
 const approvedCount = computed(() => workspace.features.filter((item) => item.status === 'APPROVED').length);
 const uiApprovedCount = computed(() => workspace.uiDesigns.filter((item) => item.status === 'APPROVED').length);
 const frontendApprovedCount = computed(() => workspace.frontendCodes.filter((item) => item.status === 'APPROVED').length);
+const backendApprovedCount = computed(() => workspace.backendCodes.filter((item) => item.status === 'APPROVED').length);
 const selectedCodeFile = computed<GeneratedCodeFile | undefined>(() => frontendCodeDetail.value?.files.find((file) => file.path === selectedCodePath.value));
-const canAnalyze = computed(() => workspace.materials.some((item) => item.parseStatus === 'PARSED') && workspace.features.length === 0);
+const backendSelectedCodeFile = computed<GeneratedCodeFile | undefined>(() => backendCodeDetail.value?.files.find((file) => file.path === backendSelectedCodePath.value));
+const canAnalyze = computed(() => Boolean(aiModelStatus.value?.configured) && workspace.materials.some((item) => item.parseStatus === 'PARSED') && workspace.features.length === 0);
 
 const stageLabel = (value?: string) => stageOptions.find(([key]) => key === value)?.[1] || value || '资料收集';
 const parseStatusLabel = (value: string) => ({ UPLOADED: '已上传', PARSED: '已解析', READY_FOR_AI: '等待 AI', FAILED: '解析失败' })[value] || value;
@@ -371,12 +443,26 @@ const moduleFeatures = (moduleId: string) => workspace.features.filter((item) =>
 const modulePrototype = (moduleId: string) => workspace.prototypes.find((item) => item.moduleId === moduleId);
 const prototypeStatusLabel = (value?: string) => ({ PENDING_REVIEW: '待审核', APPROVED: '已通过', REJECTED: '已驳回', RETURNED: '已退回' })[value || ''] || '未生成';
 const prototypeStatusType = (value?: string): TagProps['type'] => ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' })[value || ''] as TagProps['type'] || 'info';
-const canGeneratePrototype = (status: string) => ['REQUIREMENT_APPROVED', 'PROTOTYPE_REVISION'].includes(status);
+const canGeneratePrototype = (status: string) => Boolean(aiModelStatus.value?.configured) && ['REQUIREMENT_APPROVED', 'PROTOTYPE_REVISION'].includes(status);
 const moduleUiDesign = (moduleId: string) => workspace.uiDesigns.find((item) => item.moduleId === moduleId);
-const uiSourceLabel = (value?: string) => ({ RULE_BASED_UI_V1: '工作流生成', USER_UPLOAD: '人工上传' })[value || ''] || '-';
+const uiSourceLabel = (value?: string) => ({ AI_RESPONSES_V1: 'AI 生成', RULE_BASED_UI_V1: '旧版规则生成', USER_UPLOAD: '人工上传' })[value || ''] || '-';
 const canCreateUiDesign = (status: string) => ['PROTOTYPE_APPROVED', 'UI_REVISION'].includes(status);
+const canGenerateUiDesign = (status: string) => Boolean(aiModelStatus.value?.configured) && canCreateUiDesign(status);
 const moduleFrontendCode = (moduleId: string) => workspace.frontendCodes.find((item) => item.moduleId === moduleId);
 const canDevelopFrontend = (status: string) => ['UI_APPROVED', 'FRONTEND_REVISION'].includes(status);
+const canGenerateFrontend = (status: string) => Boolean(aiModelStatus.value?.configured) && canDevelopFrontend(status);
+const moduleBackendCode = (moduleId: string) => workspace.backendCodes.find((item) => item.moduleId === moduleId);
+const canDevelopBackend = (status: string) => ['FRONTEND_APPROVED', 'BACKEND_READY', 'BACKEND_REVISION'].includes(status);
+const canGenerateBackend = (status: string) => Boolean(aiModelStatus.value?.configured) && canDevelopBackend(status);
+
+const loadAiModelStatus = async () => { aiModelStatus.value = (await getAiModelStatus()).data; };
+const checkAiConnectivity = async () => {
+	checkingAi.value = true;
+	try {
+		aiModelStatus.value = (await checkAiModelConnectivity()).data;
+		useMessage().success(`AI 模型 ${aiModelStatus.value?.model} 连接正常`);
+	} finally { checkingAi.value = false; }
+};
 
 const loadData = async () => {
 	loading.value = true;
@@ -587,7 +673,63 @@ const reviewFrontendCode = async (moduleName: string, code: ModuleFrontendCode |
 	} finally { frontendBusyId.value = ''; }
 };
 
-onMounted(loadData);
+const editBackendLogic = (module: WorkflowProjectWorkspace['modules'][number]) => {
+	backendLogicModule.value = module;
+	backendLogicText.value = module.backendLogic || '';
+	backendLogicVisible.value = true;
+};
+const saveBackendLogic = async () => {
+	const module = backendLogicModule.value;
+	if (!module) return;
+	backendBusyId.value = module.id;
+	try {
+		await saveBackendDevelopmentSpec(module.id, { logic: backendLogicText.value });
+		backendLogicVisible.value = false;
+		useMessage().success('模块后端实现逻辑已保存');
+		await loadWorkspace();
+	} finally { backendBusyId.value = ''; }
+};
+const generateBackendCode = async (module: WorkflowProjectWorkspace['modules'][number]) => {
+	try { await useMessageBox().confirm(`确认根据“${module.name}”的功能点生成后端代码新版本吗？`); } catch { return; }
+	backendBusyId.value = module.id;
+	try {
+		await generateModuleBackendCode(module.id);
+		useMessage().success('后端代码已生成并提交审核');
+		await loadWorkspace(); await loadData();
+	} finally { backendBusyId.value = ''; }
+};
+const openBackendCode = async (moduleName: string, code?: ModuleBackendCode) => {
+	if (!code) return;
+	backendCodeVisible.value = true; backendCodeLoading.value = true; backendCodeDetail.value = undefined;
+	backendCodeTitle.value = `${moduleName} · ${code.versionNo} · 后端代码审核`;
+	backendCodeTab.value = 'summary'; backendSelectedCodePath.value = '';
+	try {
+		backendCodeDetail.value = (await getModuleBackendCode(code.versionId)).data;
+		backendSelectedCodePath.value = backendCodeDetail.value.files[0]?.path || '';
+	} finally { backendCodeLoading.value = false; }
+};
+const downloadBackendCode = (moduleName: string, code?: ModuleBackendCode) => {
+	if (!code) return;
+	downBlobFile(`/admin/workflow/backend-codes/${code.versionId}/download`, {}, `${moduleName}-${code.versionNo}-backend.zip`);
+};
+const reviewBackendCode = async (moduleName: string, code: ModuleBackendCode | undefined, action: 'APPROVE' | 'REJECT') => {
+	if (!code) return;
+	let comment = '';
+	if (action === 'REJECT') {
+		try { const result = await useMessageBox().prompt(`填写“${moduleName}”后端代码的修改意见`, '驳回后端代码', { inputValidator: (value) => Boolean(value?.trim()) || '必须填写修改意见' }); comment = result.value; }
+		catch { return; }
+	} else {
+		try { await useMessageBox().confirm(`确认通过“${moduleName}”的 ${code.versionNo} 后端代码吗？`); } catch { return; }
+	}
+	backendBusyId.value = code.moduleId;
+	try {
+		await reviewModuleBackendCode(code.versionId, { action, comment });
+		useMessage().success(action === 'APPROVE' ? '模块后端代码已通过' : '模块后端代码已驳回');
+		await loadWorkspace(); await loadData();
+	} finally { backendBusyId.value = ''; }
+};
+
+onMounted(() => { loadData(); loadAiModelStatus(); });
 onBeforeUnmount(clearUiPreview);
 </script>
 
@@ -595,6 +737,8 @@ onBeforeUnmount(clearUiPreview);
 .project-page { padding: 20px; }
 .page-heading, .workspace-header, .toolbar, .module-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .page-heading { margin-bottom: 20px; }
+.heading-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ai-config-alert { margin-bottom: 16px; }
 .page-heading h2, .workspace-header h2, .module-heading h3 { margin: 0 0 6px; }
 .page-heading p, .workspace-header p, .toolbar span, .module-heading span { margin: 0; color: var(--el-text-color-secondary); }
 .search-form { padding: 16px 16px 0; margin-bottom: 16px; border-radius: 8px; background: var(--el-fill-color-light); }

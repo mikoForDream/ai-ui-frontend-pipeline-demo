@@ -4,7 +4,6 @@ import com.pig4cloud.pig.workflow.dto.GeneratedCodeFile;
 import com.pig4cloud.pig.workflow.entity.WorkflowFeature;
 import com.pig4cloud.pig.workflow.entity.WorkflowModule;
 import com.pig4cloud.pig.workflow.entity.WorkflowProject;
-import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 import org.springframework.util.StringUtils;
 
@@ -13,8 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** 生成可审查的 Vue 3 前端代码草稿，未来 AI 生成器复用同一文件契约。 */
-@Component
+/** Legacy deterministic fixture. It is not a Spring bean or a production fallback. */
 public class FrontendCodeRenderer {
 
 	public RenderedFrontend render(WorkflowProject project, WorkflowModule module, List<WorkflowFeature> features,

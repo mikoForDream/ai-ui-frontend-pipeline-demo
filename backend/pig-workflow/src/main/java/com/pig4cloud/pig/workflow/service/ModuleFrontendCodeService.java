@@ -6,6 +6,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pig4cloud.pig.common.core.exception.CheckedException;
+import com.pig4cloud.pig.common.file.core.FileTemplate;
+import com.pig4cloud.pig.workflow.ai.AiModelGateway;
 import com.pig4cloud.pig.workflow.dto.FrontendCodeReviewRequest;
 import com.pig4cloud.pig.workflow.dto.FrontendDevelopmentSpecRequest;
 import com.pig4cloud.pig.workflow.dto.GeneratedCodeFile;
@@ -28,6 +30,7 @@ import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
@@ -42,12 +45,13 @@ import java.util.zip.ZipOutputStream;
 public class ModuleFrontendCodeService {
 
 	private static final String ARTIFACT_TYPE = "FRONTEND_CODE";
-	private static final String GENERATOR = "RULE_BASED_VUE3_V1";
+	private static final String GENERATOR = WorkflowAiGenerationService.GENERATOR;
 	private static final int MAX_LOGIC_LENGTH = 5000;
 	private static final Set<String> REVIEW_ACTIONS = Set.of("APPROVE", "REJECT", "RETURN");
 
 	private final ObjectMapper objectMapper;
-	private final FrontendCodeRenderer renderer;
+	private final WorkflowAiGenerationService aiGenerationService;
+	private final FileTemplate fileTemplate;
 	private final WorkflowProjectMapper projectMapper;
 	private final WorkflowModuleMapper moduleMapper;
 	private final WorkflowFeatureMapper featureMapper;
@@ -70,16 +74,16 @@ public class ModuleFrontendCodeService {
 	public ModuleFrontendCodeSummary generate(Long moduleId) {
 		WorkflowModule module = requireEditableModule(moduleId);
 		WorkflowProject project = requireProject(module.getProjectId());
-		Long uiDesignVersionId = requireApprovedUiVersion(module);
+		ApprovedUi approvedUi = requireApprovedUi(module);
 		List<WorkflowFeature> features = featureMapper.selectList(Wrappers.<WorkflowFeature>lambdaQuery()
 			.eq(WorkflowFeature::getModuleId, moduleId).orderByAsc(WorkflowFeature::getCreateTime));
 		if (features.isEmpty() || features.stream().anyMatch(feature -> !"APPROVED".equals(feature.getStatus()))) {
 			throw new CheckedException("模块全部功能点通过后才能生成前端代码");
 		}
 		WorkflowArtifact artifact = prepareArtifact(module);
-		FrontendCodeRenderer.RenderedFrontend rendered = renderer.render(project, module, features,
-				module.getFrontendLogic());
-		String content = writeContent(Map.of("generator", GENERATOR, "uiDesignVersionId", uiDesignVersionId,
+		WorkflowAiGenerationService.GeneratedFrontend rendered = aiGenerationService.generateFrontend(project, module,
+				features, approvedUi.html(), approvedUi.image(), currentReviewComment(artifact));
+		String content = writeContent(Map.of("generator", GENERATOR, "uiDesignVersionId", approvedUi.versionId(),
 				"frontendLogic", module.getFrontendLogic() == null ? "" : module.getFrontendLogic(), "previewHtml",
 				rendered.previewHtml(), "files", rendered.files()));
 		WorkflowArtifactVersion version = new WorkflowArtifactVersion();
@@ -185,7 +189,7 @@ public class ModuleFrontendCodeService {
 		return module;
 	}
 
-	private Long requireApprovedUiVersion(WorkflowModule module) {
+	private ApprovedUi requireApprovedUi(WorkflowModule module) {
 		WorkflowArtifact uiArtifact = artifactMapper.selectOne(Wrappers.<WorkflowArtifact>lambdaQuery()
 			.eq(WorkflowArtifact::getProjectId, module.getProjectId()).eq(WorkflowArtifact::getModuleId, module.getId())
 			.eq(WorkflowArtifact::getArtifactType, "UI_DESIGN"));
@@ -196,7 +200,26 @@ public class ModuleFrontendCodeService {
 		if (uiVersion == null || !"APPROVED".equals(uiVersion.getStatus())) {
 			throw new CheckedException("模块 UI 设计尚未通过审核");
 		}
-		return uiVersion.getId();
+		try {
+			JsonNode content = objectMapper.readTree(uiVersion.getContentJson());
+			if ("HTML".equals(content.path("kind").asText())) {
+				return new ApprovedUi(uiVersion.getId(), content.path("html").asText(), null);
+			}
+			try (InputStream input = (InputStream) fileTemplate.getObject(content.path("bucket").asText(),
+					content.path("objectName").asText())) {
+				return new ApprovedUi(uiVersion.getId(), null, new AiModelGateway.AiImage(
+						content.path("contentType").asText("image/png"), input.readAllBytes()));
+			}
+		}
+		catch (Exception exception) {
+			throw new CheckedException("读取已审核 UI 设计失败: " + exception.getMessage());
+		}
+	}
+
+	private String currentReviewComment(WorkflowArtifact artifact) {
+		if (artifact == null || artifact.getCurrentVersionId() == null) return null;
+		WorkflowArtifactVersion version = versionMapper.selectById(artifact.getCurrentVersionId());
+		return version == null ? null : version.getReviewComment();
 	}
 
 	private WorkflowArtifact prepareArtifact(WorkflowModule module) {
@@ -292,4 +315,6 @@ public class ModuleFrontendCodeService {
 
 	private record FrontendContent(String generator, Long uiDesignVersionId, String frontendLogic,
 			String previewHtml, List<GeneratedCodeFile> files) { }
+
+	private record ApprovedUi(Long versionId, String html, AiModelGateway.AiImage image) { }
 }

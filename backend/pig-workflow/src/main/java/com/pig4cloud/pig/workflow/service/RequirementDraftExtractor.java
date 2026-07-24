@@ -1,6 +1,5 @@
 package com.pig4cloud.pig.workflow.service;
 
-import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -13,10 +12,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * 在 AI 执行器接入前提供确定性的需求草稿抽取，结果必须经过人工审核。
- */
-@Component
+/** Test-only deterministic parser retained for regression fixtures; production generation uses the AI gateway. */
 public class RequirementDraftExtractor {
 
 	private static final Pattern MODULE_PREFIX = Pattern.compile("^(?:模块|module)\\s*[:：-]\\s*(.{2,60})$",

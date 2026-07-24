@@ -4,13 +4,11 @@ import com.pig4cloud.pig.workflow.entity.WorkflowFeature;
 import com.pig4cloud.pig.workflow.entity.WorkflowModule;
 import com.pig4cloud.pig.workflow.entity.WorkflowProject;
 import org.springframework.web.util.HtmlUtils;
-import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-/** 生成可供 UI 审核的确定性高保真草稿，后续 AI 生成器复用同一产物契约。 */
-@Component
+/** Legacy deterministic fixture. It is not a Spring bean or a production fallback. */
 public class UiDesignRenderer {
 
 	public String render(WorkflowProject project, WorkflowModule module, List<WorkflowFeature> features) {

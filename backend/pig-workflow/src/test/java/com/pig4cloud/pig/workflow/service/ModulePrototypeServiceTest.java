@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ModulePrototypeServiceTest {
 
 	private final ModulePrototypeService service = new ModulePrototypeService(new ObjectMapper(), null, null, null,
-			null, null, null);
+			null, null, null, null);
 
 	@Test
 	void rendersInteractivePrototypeAndEscapesRequirementText() {

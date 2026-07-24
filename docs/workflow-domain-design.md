@@ -95,3 +95,10 @@ Notion 继续承担规格和协作任务管理，Pig 数据库承担正式运行
 - 工作台可在线运行预览、逐文件查看代码及下载 ZIP；下载前拒绝绝对路径、空路径和目录穿越路径，用户输入进入 HTML、Vue 或 TypeScript 字符串前进行对应转义。
 - 只有当前 `PENDING_REVIEW` 版本可以审核；驳回或退回必须填写意见，被驳回模块可修改实现逻辑并生成下一版本，已通过版本不可覆盖。
 - 模块状态依次为 `UI_APPROVED -> FRONTEND_REVIEW -> FRONTEND_APPROVED/FRONTEND_REVISION`；全部模块前端代码通过后，项目从 `FRONTEND_REVIEW` 推进到 `BACKEND_READY`，等待后端开发阶段。
+
+## V7 模块后端开发与代码审核
+
+- `wf_module.backend_logic` 保存模块级接口、数据模型、事务、权限、校验和外部依赖补充要求，允许在 AI 生成前由用户介入。
+- 每个模块对应一个 `BACKEND_CODE` 类型的 `wf_artifact`，每次生成新增不可覆盖的版本，内容包含 API 摘要、后端逻辑快照和 Java/Spring Boot 源文件列表。
+- 后端代码生成通过统一 Responses API 网关执行结构化输出，服务端校验相对路径、文件数量、代码总量和 Java 源文件存在性；代码只在审核通过后进入下一阶段。
+- 模块状态依次为 `BACKEND_READY -> BACKEND_REVIEW -> BACKEND_APPROVED/BACKEND_REVISION`；全部模块后端代码通过后，项目进入 `INTEGRATION`。

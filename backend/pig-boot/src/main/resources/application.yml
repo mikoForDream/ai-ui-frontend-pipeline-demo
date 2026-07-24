@@ -26,6 +26,20 @@ spring:
   profiles:
     active: dev  # 激活dev，对应 application-dev.yml
 
+# AI model credentials stay in backend environment variables and are never returned to the browser.
+workflow:
+  ai:
+    provider: ${OPENAI_PROVIDER:OPENAI}
+    base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+    model: ${OPENAI_MODEL:gpt-5.6}
+    api-key: ${OPENAI_API_KEY:}
+    reasoning-effort: ${OPENAI_REASONING_EFFORT:medium}
+    max-output-tokens: ${OPENAI_MAX_OUTPUT_TOKENS:32000}
+    max-input-chars: ${OPENAI_MAX_INPUT_CHARS:200000}
+    max-attempts: ${OPENAI_MAX_ATTEMPTS:3}
+    connect-timeout: ${OPENAI_CONNECT_TIMEOUT:10s}
+    read-timeout: ${OPENAI_READ_TIMEOUT:3m}
+
 
 ## spring security 对外暴露接口设置（不鉴权直接可访问）
 security:

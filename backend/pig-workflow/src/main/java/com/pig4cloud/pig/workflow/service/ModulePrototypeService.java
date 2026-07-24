@@ -42,7 +42,7 @@ import java.util.Set;
 public class ModulePrototypeService {
 
 	private static final String ARTIFACT_TYPE = "PROTOTYPE";
-	private static final String GENERATOR = "RULE_BASED_HTML_V1";
+	private static final String GENERATOR = WorkflowAiGenerationService.GENERATOR;
 	private static final Set<String> REVIEW_ACTIONS = Set.of("APPROVE", "REJECT", "RETURN");
 
 	private final ObjectMapper objectMapper;
@@ -52,6 +52,7 @@ public class ModulePrototypeService {
 	private final WorkflowArtifactMapper artifactMapper;
 	private final WorkflowArtifactVersionMapper versionMapper;
 	private final WorkflowProductSpecMapper productSpecMapper;
+	private final WorkflowAiGenerationService aiGenerationService;
 
 	@Transactional(rollbackFor = Exception.class)
 	public ModulePrototypeSummary generate(Long moduleId) {
@@ -89,7 +90,7 @@ public class ModulePrototypeService {
 			}
 		}
 
-		String html = renderHtml(project, module, features);
+		String html = aiGenerationService.generatePrototype(project, module, features, currentReviewComment(artifact));
 		WorkflowArtifactVersion version = new WorkflowArtifactVersion();
 		version.setArtifactId(artifact.getId());
 		version.setVersionNo("V" + (versionMapper.selectCount(Wrappers.<WorkflowArtifactVersion>lambdaQuery()
@@ -230,6 +231,12 @@ public class ModulePrototypeService {
 			.eq(WorkflowArtifact::getProjectId, module.getProjectId())
 			.eq(WorkflowArtifact::getModuleId, module.getId())
 			.eq(WorkflowArtifact::getArtifactType, ARTIFACT_TYPE));
+	}
+
+	private String currentReviewComment(WorkflowArtifact artifact) {
+		if (artifact == null || artifact.getCurrentVersionId() == null) return null;
+		WorkflowArtifactVersion version = versionMapper.selectById(artifact.getCurrentVersionId());
+		return version == null ? null : version.getReviewComment();
 	}
 
 	private WorkflowModule requireModule(Long moduleId) {
