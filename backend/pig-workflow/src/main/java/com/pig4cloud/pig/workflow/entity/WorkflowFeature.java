@@ -8,40 +8,24 @@ import com.pig4cloud.pig.common.mybatis.base.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-/**
- * 工作流研发项目。
- */
+/** 可独立审核和追踪的产品功能点。 */
 @Data
-@TableName("wf_project")
+@TableName("wf_feature")
 @EqualsAndHashCode(callSuper = true)
-public class WorkflowProject extends BaseEntity {
+public class WorkflowFeature extends BaseEntity {
 
 	@TableId(type = IdType.ASSIGN_ID)
 	private Long id;
-
-	private String projectCode;
-
+	private Long projectId;
+	private Long moduleId;
+	private String featureCode;
 	private String name;
-
 	private String description;
-
+	private String acceptanceCriteria;
+	private String priority;
 	private String status;
-
-	private String currentStage;
-
-	private String repositoryUrl;
-
-	private String defaultBranch;
-
-	private String frontendPath;
-
-	private String backendPath;
-
-	private String techStack;
-
-	private String currentSpecVersion;
-
-	private String notionPageId;
+	private String reviewComment;
+	private Integer version;
 
 	@TableLogic
 	private String delFlag;

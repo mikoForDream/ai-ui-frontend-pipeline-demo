@@ -342,3 +342,98 @@ CREATE TABLE IF NOT EXISTS `wf_product_spec` (
   UNIQUE KEY `uk_wf_product_spec_version` (`project_id`, `version_no`, `del_flag`),
   KEY `idx_wf_product_spec_status` (`project_id`, `status`, `create_time`)
 ) ENGINE=InnoDB COMMENT='前后端统一产品规格';
+
+-- V3：研发项目资料、模块与功能点审核。
+SET @wf_project_current_stage_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'wf_project' AND column_name = 'current_stage'
+);
+SET @wf_project_current_stage_sql = IF(
+  @wf_project_current_stage_exists = 0,
+  'ALTER TABLE `wf_project` ADD COLUMN `current_stage` varchar(32) NOT NULL DEFAULT ''MATERIAL_COLLECTION'' AFTER `status`',
+  'SELECT 1'
+);
+PREPARE wf_project_current_stage_stmt FROM @wf_project_current_stage_sql;
+EXECUTE wf_project_current_stage_stmt;
+DEALLOCATE PREPARE wf_project_current_stage_stmt;
+
+CREATE TABLE IF NOT EXISTS `wf_material` (
+  `id` bigint NOT NULL,
+  `project_id` bigint NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `object_name` varchar(500) NOT NULL,
+  `bucket_name` varchar(128) NOT NULL,
+  `content_type` varchar(128) DEFAULT NULL,
+  `extension` varchar(20) NOT NULL,
+  `file_size` bigint NOT NULL,
+  `checksum` varchar(128) NOT NULL,
+  `parse_status` varchar(32) NOT NULL DEFAULT 'UPLOADED',
+  `extracted_text` longtext DEFAULT NULL,
+  `parse_message` varchar(500) DEFAULT NULL,
+  `create_by` varchar(64) NOT NULL DEFAULT ' ',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by` varchar(64) NOT NULL DEFAULT ' ',
+  `update_time` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `del_flag` char(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `idx_wf_material_project` (`project_id`, `parse_status`, `create_time`),
+  KEY `idx_wf_material_checksum` (`project_id`, `checksum`, `del_flag`)
+) ENGINE=InnoDB COMMENT='研发项目上传资料';
+
+CREATE TABLE IF NOT EXISTS `wf_module` (
+  `id` bigint NOT NULL,
+  `project_id` bigint NOT NULL,
+  `module_code` varchar(64) NOT NULL,
+  `name` varchar(128) NOT NULL,
+  `description` varchar(1000) DEFAULT NULL,
+  `sort_order` int NOT NULL DEFAULT 0,
+  `status` varchar(32) NOT NULL DEFAULT 'REQUIREMENT_REVIEW',
+  `create_by` varchar(64) NOT NULL DEFAULT ' ',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by` varchar(64) NOT NULL DEFAULT ' ',
+  `update_time` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `del_flag` char(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_wf_module_code` (`project_id`, `module_code`, `del_flag`),
+  KEY `idx_wf_module_project` (`project_id`, `sort_order`)
+) ENGINE=InnoDB COMMENT='研发项目功能模块';
+
+CREATE TABLE IF NOT EXISTS `wf_feature` (
+  `id` bigint NOT NULL,
+  `project_id` bigint NOT NULL,
+  `module_id` bigint NOT NULL,
+  `feature_code` varchar(64) NOT NULL,
+  `name` varchar(200) NOT NULL,
+  `description` text DEFAULT NULL,
+  `acceptance_criteria` text DEFAULT NULL,
+  `priority` varchar(20) NOT NULL DEFAULT 'MEDIUM',
+  `status` varchar(32) NOT NULL DEFAULT 'PENDING_REVIEW',
+  `review_comment` text DEFAULT NULL,
+  `version` int NOT NULL DEFAULT 1,
+  `create_by` varchar(64) NOT NULL DEFAULT ' ',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by` varchar(64) NOT NULL DEFAULT ' ',
+  `update_time` datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `del_flag` char(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_wf_feature_code` (`project_id`, `feature_code`, `del_flag`),
+  KEY `idx_wf_feature_review` (`project_id`, `module_id`, `status`, `create_time`)
+) ENGINE=InnoDB COMMENT='研发项目功能点';
+
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `en_name`, `path`, `parent_id`, `icon`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10015, '研发项目', 'projects', '/workflow/project/index', 10000, 'ele-Briefcase', '1', 1, '0', 'admin');
+
+UPDATE `sys_menu` SET `sort_order` = 2 WHERE `menu_id` = 10020;
+UPDATE `sys_menu` SET `sort_order` = 3 WHERE `menu_id` = 10030;
+UPDATE `sys_menu` SET `sort_order` = 4 WHERE `menu_id` = 10040;
+
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10013, '研发项目查询', 'workflow_project_view', 10015, '0', 1, '1', 'admin'),
+(10014, '研发项目编辑', 'workflow_project_edit', 10015, '0', 2, '1', 'admin'),
+(10016, '项目资料上传', 'workflow_material_upload', 10015, '0', 3, '1', 'admin'),
+(10017, '项目资料分析', 'workflow_material_analyze', 10015, '0', 4, '1', 'admin'),
+(10018, '功能点编辑', 'workflow_feature_edit', 10015, '0', 5, '1', 'admin'),
+(10019, '功能点审核', 'workflow_feature_review', 10015, '0', 6, '1', 'admin');
+
+INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
+(1, 10013), (1, 10014), (1, 10015), (1, 10016), (1, 10017), (1, 10018), (1, 10019);
