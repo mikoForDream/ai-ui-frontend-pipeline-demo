@@ -102,7 +102,22 @@ export interface WorkflowModule {
 	name: string;
 	description?: string;
 	sortOrder: number;
-	status: 'REQUIREMENT_REVIEW' | 'REQUIREMENT_APPROVED';
+	status: 'REQUIREMENT_REVIEW' | 'REQUIREMENT_APPROVED' | 'PROTOTYPE_REVIEW' | 'PROTOTYPE_REVISION' | 'PROTOTYPE_APPROVED';
+}
+
+export interface ModulePrototype {
+	artifactId: string;
+	moduleId: string;
+	versionId: string;
+	versionNo: string;
+	status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'RETURNED';
+	generator: string;
+	reviewComment?: string;
+	createTime?: string;
+}
+
+export interface ModulePrototypeDetail extends ModulePrototype {
+	html: string;
 }
 
 export interface WorkflowFeature {
@@ -124,6 +139,8 @@ export interface WorkflowProjectWorkspace {
 	materials: WorkflowMaterial[];
 	modules: WorkflowModule[];
 	features: WorkflowFeature[];
+	prototypes: ModulePrototype[];
+	frozenSpecVersion?: string;
 }
 
 export const getDefinitionPage = (params: PageQuery) => request({ url: '/admin/workflow/definitions/page', method: 'get', params });
@@ -193,3 +210,12 @@ export const updateProjectFeature = (id: string, data: Partial<WorkflowFeature>)
 
 export const reviewProjectFeature = (id: string, data: { action: 'APPROVE' | 'REJECT' | 'RETURN'; comment?: string }) =>
 	request({ url: `/admin/workflow/features/${id}/reviews`, method: 'post', data });
+
+export const generateModulePrototype = (moduleId: string) =>
+	request({ url: `/admin/workflow/modules/${moduleId}/prototypes`, method: 'post', timeout: 120000 });
+
+export const getModulePrototype = (versionId: string) =>
+	request({ url: `/admin/workflow/prototypes/${versionId}`, method: 'get' });
+
+export const reviewModulePrototype = (versionId: string, data: { action: 'APPROVE' | 'REJECT' | 'RETURN'; comment?: string }) =>
+	request({ url: `/admin/workflow/prototypes/${versionId}/reviews`, method: 'post', data });

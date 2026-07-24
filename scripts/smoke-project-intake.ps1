@@ -1,7 +1,8 @@
 param(
 	[string]$BaseUrl = 'http://127.0.0.1:9999/admin',
 	[string]$Username = 'admin',
-	[string]$Password = $env:PIG_ADMIN_PASSWORD
+	[string]$Password = $env:PIG_ADMIN_PASSWORD,
+	[string]$EncryptedPassword
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,8 +11,8 @@ function Assert-True([bool]$Condition, [string]$Message) {
 	if (-not $Condition) { throw "Assertion failed: $Message" }
 }
 
-Assert-True (-not [string]::IsNullOrWhiteSpace($Password)) `
-	'provide -Password or set the PIG_ADMIN_PASSWORD environment variable'
+Assert-True (-not [string]::IsNullOrWhiteSpace($Password) -or -not [string]::IsNullOrWhiteSpace($EncryptedPassword)) `
+	'provide -Password, -EncryptedPassword, or set the PIG_ADMIN_PASSWORD environment variable'
 
 function Invoke-WorkflowApi([string]$Method, [string]$Path, $Body = $null) {
 	$params = @{
@@ -21,7 +22,8 @@ function Invoke-WorkflowApi([string]$Method, [string]$Path, $Body = $null) {
 		ContentType = 'application/json; charset=utf-8'
 	}
 	if ($null -ne $Body) { $params.Body = ($Body | ConvertTo-Json -Depth 10 -Compress) }
-	$result = Invoke-RestMethod @params
+	try { $result = Invoke-RestMethod @params }
+	catch { throw "API $Method $Path failed: $($_.Exception.Message)" }
 	Assert-True ($result.code -eq 0) "API $Method $Path returned code $($result.code): $($result.msg)"
 	return $result.data
 }
@@ -37,21 +39,25 @@ $materialFile = Join-Path $runDirectory 'project-smoke-material.md'
 $encryptScript = (Resolve-Path 'scripts\encrypt-password.cjs').Path
 
 try {
-	$nodeProcess = Start-Process -FilePath $nodeExe -ArgumentList @($encryptScript, $Password) `
-		-Wait -PassThru -NoNewWindow -RedirectStandardOutput $encryptedPasswordFile
-	Assert-True ($nodeProcess.ExitCode -eq 0) 'password encryption process failed'
-	$encryptedPassword = Get-Content $encryptedPasswordFile -Raw
+	if ([string]::IsNullOrWhiteSpace($EncryptedPassword)) {
+		$nodeProcess = Start-Process -FilePath $nodeExe -ArgumentList @($encryptScript, $Password) `
+			-Wait -PassThru -NoNewWindow -RedirectStandardOutput $encryptedPasswordFile
+		Assert-True ($nodeProcess.ExitCode -eq 0) 'password encryption process failed'
+		$EncryptedPassword = Get-Content $encryptedPasswordFile -Raw
+	}
 	$basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes('test:test'))
 	$tokenResponse = Invoke-RestMethod -Method Post -Uri "$BaseUrl/oauth2/token" `
 		-Headers @{ Authorization = "Basic $basic"; 'TENANT-ID' = '1' } `
 		-ContentType 'application/x-www-form-urlencoded' `
-		-Body @{ username = $Username; password = $encryptedPassword; grant_type = 'password'; scope = 'server' }
+		-Body @{ username = $Username; password = $EncryptedPassword; grant_type = 'password'; scope = 'server' }
 	$script:AccessToken = $tokenResponse.access_token
 	Assert-True (-not [string]::IsNullOrWhiteSpace($script:AccessToken)) 'login did not return an access token'
 
 	$currentUser = Invoke-WorkflowApi Get '/user/info'
 	Assert-True ($currentUser.permissions -contains 'workflow_material_upload') 'login authority lacks material upload permission'
 	Assert-True ($currentUser.permissions -contains 'workflow_feature_review') 'login authority lacks feature review permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_prototype_generate') 'login authority lacks prototype generation permission'
+	Assert-True ($currentUser.permissions -contains 'workflow_prototype_review') 'login authority lacks prototype review permission'
 
 	$stamp = Get-Date -Format 'yyyyMMddHHmmss'
 	$project = Invoke-WorkflowApi Post '/workflow/projects' @{
@@ -90,7 +96,37 @@ try {
 	Assert-True (($completed.modules | Where-Object status -ne 'REQUIREMENT_APPROVED').Count -eq 0) `
 		'not all modules reached REQUIREMENT_APPROVED'
 
-	Write-Host "Project intake smoke regression passed for project $projectId."
+	$modules = @($completed.modules)
+	$firstPrototype = Invoke-WorkflowApi Post "/workflow/modules/$($modules[0].id)/prototypes"
+	Assert-True ($firstPrototype.versionNo -eq 'V1') "first prototype version is $($firstPrototype.versionNo)"
+	$prototypeDetail = Invoke-WorkflowApi Get "/workflow/prototypes/$($firstPrototype.versionId)"
+	Assert-True ($prototypeDetail.html -like '*<!doctype html>*') 'prototype detail does not contain HTML'
+	[void](Invoke-WorkflowApi Post "/workflow/prototypes/$($firstPrototype.versionId)/reviews" @{
+		action = 'REJECT'
+		comment = 'smoke requires a second version'
+	})
+	$secondPrototype = Invoke-WorkflowApi Post "/workflow/modules/$($modules[0].id)/prototypes"
+	Assert-True ($secondPrototype.versionNo -eq 'V2') "regenerated prototype version is $($secondPrototype.versionNo)"
+	[void](Invoke-WorkflowApi Post "/workflow/prototypes/$($secondPrototype.versionId)/reviews" @{
+		action = 'APPROVE'
+		comment = 'smoke approved V2'
+	})
+	for ($index = 1; $index -lt $modules.Count; $index++) {
+		$prototype = Invoke-WorkflowApi Post "/workflow/modules/$($modules[$index].id)/prototypes"
+		[void](Invoke-WorkflowApi Post "/workflow/prototypes/$($prototype.versionId)/reviews" @{
+			action = 'APPROVE'
+			comment = 'smoke approved'
+		})
+	}
+	$prototypeCompleted = Invoke-WorkflowApi Get "/workflow/projects/$projectId/workspace"
+	Assert-True ($prototypeCompleted.project.currentStage -eq 'UI_READY') `
+		"project stage is $($prototypeCompleted.project.currentStage), expected UI_READY"
+	Assert-True ($prototypeCompleted.frozenSpecVersion -eq 'REQ-V1') 'frozen requirement spec is missing'
+	Assert-True ($prototypeCompleted.prototypes.Count -eq $modules.Count) 'module prototype count mismatch'
+	Assert-True (($prototypeCompleted.prototypes | Where-Object status -ne 'APPROVED').Count -eq 0) `
+		'not all module prototypes reached APPROVED'
+
+	Write-Host "Project intake and prototype regression passed for project $projectId."
 }
 finally {
 	Remove-Item $encryptedPasswordFile, $materialFile -Force -ErrorAction SilentlyContinue

@@ -69,3 +69,12 @@ Notion 继续承担规格和协作任务管理，Pig 数据库承担正式运行
 - 项目从 `MATERIAL_COLLECTION` 进入 `FEATURE_REVIEW`；所有功能点通过后进入 `PROTOTYPE_READY`。
 - 当前确定性解析器处理文本、Markdown、Word 和 Excel。PDF、图片及演示文稿标记为 `READY_FOR_AI`，不伪装成已解析资料。
 - 当前需求草稿抽取器为 `RULE_BASED_V1`，用于先打通可靠闭环；后续 AI 执行器必须输出相同的模块与功能点结构，并继续经过人工审核。
+
+## V4 模块原型与审核
+
+- 首次生成模块原型前，将全部已审核模块和功能点冻结为 `wf_product_spec` 的 `REQ-V1` 版本。
+- 每个模块对应一个 `PROTOTYPE` 类型的 `wf_artifact`，`module_id` 明确产物归属；每次生成新增 `wf_artifact_version`，不覆盖旧版本。
+- 当前生成器为 `RULE_BASED_HTML_V1`，输出带模块导航、业务输入、操作反馈和验收标准的交互 HTML；需求文本进入原型前执行 HTML 转义，前端在沙箱 iframe 中预览。
+- 原型版本支持 `PENDING_REVIEW -> APPROVED/REJECTED/RETURNED`，驳回或退回必须填写意见；只有当前版本可以审核。
+- 被驳回模块进入 `PROTOTYPE_REVISION` 并可生成下一版本；已通过模块不可直接覆盖。
+- 所有模块原型通过后，项目从 `PROTOTYPE_REVIEW` 推进到 `UI_READY`。下一阶段允许 AI 基于已通过原型生成 UI，也允许用户上传设计图介入。

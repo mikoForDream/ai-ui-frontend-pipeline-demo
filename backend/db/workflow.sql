@@ -437,3 +437,37 @@ INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `vi
 
 INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
 (1, 10013), (1, 10014), (1, 10015), (1, 10016), (1, 10017), (1, 10018), (1, 10019);
+
+-- V4: module-scoped, versioned interactive prototype review.
+SET @wf_artifact_module_id_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'wf_artifact' AND column_name = 'module_id'
+);
+SET @wf_artifact_module_id_sql = IF(
+  @wf_artifact_module_id_exists = 0,
+  'ALTER TABLE `wf_artifact` ADD COLUMN `module_id` bigint DEFAULT NULL AFTER `instance_id`, ADD INDEX `idx_wf_artifact_module` (`project_id`, `module_id`, `artifact_type`)',
+  'SELECT 1'
+);
+PREPARE wf_artifact_module_id_stmt FROM @wf_artifact_module_id_sql;
+EXECUTE wf_artifact_module_id_stmt;
+DEALLOCATE PREPARE wf_artifact_module_id_stmt;
+
+SET @wf_artifact_version_review_comment_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'wf_artifact_version' AND column_name = 'review_comment'
+);
+SET @wf_artifact_version_review_comment_sql = IF(
+  @wf_artifact_version_review_comment_exists = 0,
+  'ALTER TABLE `wf_artifact_version` ADD COLUMN `review_comment` varchar(1000) DEFAULT NULL AFTER `status`',
+  'SELECT 1'
+);
+PREPARE wf_artifact_version_review_comment_stmt FROM @wf_artifact_version_review_comment_sql;
+EXECUTE wf_artifact_version_review_comment_stmt;
+DEALLOCATE PREPARE wf_artifact_version_review_comment_stmt;
+
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10021, '模块原型生成', 'workflow_prototype_generate', 10015, '0', 7, '1', 'admin'),
+(10022, '模块原型审核', 'workflow_prototype_review', 10015, '0', 8, '1', 'admin');
+
+INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
+(1, 10021), (1, 10022);

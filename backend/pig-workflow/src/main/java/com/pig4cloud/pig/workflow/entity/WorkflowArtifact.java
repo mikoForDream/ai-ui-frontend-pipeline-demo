@@ -23,6 +23,8 @@ public class WorkflowArtifact extends BaseEntity {
 
 	private Long instanceId;
 
+	private Long moduleId;
+
 	private String artifactCode;
 
 	private String name;
