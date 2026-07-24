@@ -78,3 +78,11 @@ Notion 继续承担规格和协作任务管理，Pig 数据库承担正式运行
 - 原型版本支持 `PENDING_REVIEW -> APPROVED/REJECTED/RETURNED`，驳回或退回必须填写意见；只有当前版本可以审核。
 - 被驳回模块进入 `PROTOTYPE_REVISION` 并可生成下一版本；已通过模块不可直接覆盖。
 - 所有模块原型通过后，项目从 `PROTOTYPE_REVIEW` 推进到 `UI_READY`。下一阶段允许 AI 基于已通过原型生成 UI，也允许用户上传设计图介入。
+
+## V5 模块 UI 设计与审核
+
+- 原型已通过的模块可以生成 UI 设计草稿，也可以由用户上传 PNG、JPG、JPEG 或 WebP 设计图；上传文件最大 20MB，并存入对象存储而不是数据库。
+- 当前确定性生成器为 `RULE_BASED_UI_V1`，用于打通可靠审核闭环，不伪装外部 AI 调用。后续 AI 生成器复用 `UI_DESIGN` 产物及版本契约。
+- 每个模块使用稳定的 `wf_artifact` 身份，每次生成或上传新增 `wf_artifact_version`。已通过版本不可覆盖，只有当前待审版本可以审核。
+- HTML 草稿在前端沙箱 iframe 中预览；上传图片通过带认证的内容接口读取。两种来源均支持通过、驳回和退回，驳回或退回必须填写意见。
+- 模块状态依次为 `PROTOTYPE_APPROVED -> UI_REVIEW -> UI_APPROVED/UI_REVISION`；全部模块 UI 通过后，项目进入 `FRONTEND_READY`。

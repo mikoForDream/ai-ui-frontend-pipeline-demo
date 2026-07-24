@@ -1,9 +1,13 @@
 package com.pig4cloud.pig.workflow.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pig4cloud.pig.common.core.exception.CheckedException;
 import com.pig4cloud.pig.workflow.dto.WorkflowMaterialSummary;
 import com.pig4cloud.pig.workflow.dto.ModulePrototypeSummary;
+import com.pig4cloud.pig.workflow.dto.ModuleUiDesignSummary;
 import com.pig4cloud.pig.workflow.dto.WorkflowProjectWorkspace;
 import com.pig4cloud.pig.workflow.entity.WorkflowArtifact;
 import com.pig4cloud.pig.workflow.entity.WorkflowArtifactVersion;
@@ -39,6 +43,7 @@ public class WorkflowProjectService {
 	private final WorkflowArtifactMapper artifactMapper;
 	private final WorkflowArtifactVersionMapper artifactVersionMapper;
 	private final WorkflowProductSpecMapper productSpecMapper;
+	private final ObjectMapper objectMapper;
 
 	@Transactional(rollbackFor = Exception.class)
 	public WorkflowProject create(WorkflowProject project) {
@@ -99,13 +104,37 @@ public class WorkflowProjectService {
 			.map(this::prototypeSummary)
 			.filter(java.util.Objects::nonNull)
 			.toList();
+		List<ModuleUiDesignSummary> uiDesigns = artifactMapper.selectList(Wrappers.<WorkflowArtifact>lambdaQuery()
+			.eq(WorkflowArtifact::getProjectId, projectId)
+			.eq(WorkflowArtifact::getArtifactType, "UI_DESIGN")
+			.isNotNull(WorkflowArtifact::getCurrentVersionId))
+			.stream()
+			.map(this::uiDesignSummary)
+			.filter(java.util.Objects::nonNull)
+			.toList();
 		WorkflowProductSpec frozenSpec = productSpecMapper.selectOne(Wrappers.<WorkflowProductSpec>lambdaQuery()
 			.eq(WorkflowProductSpec::getProjectId, projectId)
 			.eq(WorkflowProductSpec::getStatus, "FROZEN")
 			.orderByDesc(WorkflowProductSpec::getCreateTime)
 			.last("LIMIT 1"));
-		return new WorkflowProjectWorkspace(project, materials, modules, features, prototypes,
+		return new WorkflowProjectWorkspace(project, materials, modules, features, prototypes, uiDesigns,
 				frozenSpec == null ? null : frozenSpec.getVersionNo());
+	}
+
+	private ModuleUiDesignSummary uiDesignSummary(WorkflowArtifact artifact) {
+		WorkflowArtifactVersion version = artifactVersionMapper.selectById(artifact.getCurrentVersionId());
+		if (version == null) {
+			return null;
+		}
+		try {
+			JsonNode content = objectMapper.readTree(version.getContentJson());
+			return new ModuleUiDesignSummary(artifact.getId(), artifact.getModuleId(), version.getId(),
+					version.getVersionNo(), version.getStatus(), version.getSourceType(), content.path("kind").asText(),
+					content.path("originalName").asText(null), version.getReviewComment(), version.getCreateTime());
+		}
+		catch (JsonProcessingException exception) {
+			throw new CheckedException("读取 UI 设计摘要失败: " + exception.getMessage());
+		}
 	}
 
 	private ModulePrototypeSummary prototypeSummary(WorkflowArtifact artifact) {

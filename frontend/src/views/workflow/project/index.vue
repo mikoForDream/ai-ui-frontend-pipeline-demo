@@ -151,6 +151,34 @@
 							</el-table-column>
 						</el-table>
 					</el-tab-pane>
+					<el-tab-pane :label="`UI 设计 ${workspace.uiDesigns.length}`" name="ui-designs">
+						<div class="toolbar">
+							<div><strong>模块 UI 设计审核</strong><span>工作流生成设计草稿，也可以直接上传人工设计图</span></div>
+							<el-tag :type="uiApprovedCount === workspace.modules.length && uiApprovedCount > 0 ? 'success' : 'warning'">已通过 {{ uiApprovedCount }} / {{ workspace.modules.length }}</el-tag>
+						</div>
+						<el-empty v-if="!workspace.modules.length" description="模块原型审核完成后可进入 UI 设计" />
+						<el-table v-else :data="workspace.modules" border>
+							<el-table-column prop="moduleCode" label="模块编号" width="125" />
+							<el-table-column prop="name" label="模块" min-width="170" />
+							<el-table-column label="版本" width="90"><template #default="{ row }">{{ moduleUiDesign(row.id)?.versionNo || '-' }}</template></el-table-column>
+							<el-table-column label="来源" width="120"><template #default="{ row }">{{ uiSourceLabel(moduleUiDesign(row.id)?.sourceType) }}</template></el-table-column>
+							<el-table-column label="审核状态" width="110"><template #default="{ row }"><el-tag :type="prototypeStatusType(moduleUiDesign(row.id)?.status)">{{ prototypeStatusLabel(moduleUiDesign(row.id)?.status) }}</el-tag></template></el-table-column>
+							<el-table-column label="审核意见" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ moduleUiDesign(row.id)?.reviewComment || '-' }}</template></el-table-column>
+							<el-table-column label="操作" width="410" fixed="right" align="center">
+								<template #default="{ row }">
+									<el-button v-if="canCreateUiDesign(row.status)" v-auth="'workflow_ui_generate'" text type="primary" icon="MagicStick" :loading="uiBusyId === row.id" @click="generateUiDesign(row)">{{ moduleUiDesign(row.id) ? '重新生成' : '生成草稿' }}</el-button>
+									<el-upload v-if="canCreateUiDesign(row.status)" v-auth="'workflow_ui_upload'" class="inline-upload" :show-file-list="false" :http-request="(options) => uploadUiDesign(row, options)" accept=".png,.jpg,.jpeg,.webp">
+										<el-button text type="primary" icon="Upload" :loading="uiBusyId === row.id">上传设计图</el-button>
+									</el-upload>
+									<el-button v-if="moduleUiDesign(row.id)" text icon="View" @click="openUiDesign(row.name, moduleUiDesign(row.id))">预览</el-button>
+									<template v-if="moduleUiDesign(row.id)?.status === 'PENDING_REVIEW'">
+										<el-button v-auth="'workflow_ui_review'" text type="success" @click="reviewUiDesign(row.name, moduleUiDesign(row.id), 'APPROVE')">通过</el-button>
+										<el-button v-auth="'workflow_ui_review'" text type="danger" @click="reviewUiDesign(row.name, moduleUiDesign(row.id), 'REJECT')">驳回</el-button>
+									</template>
+								</template>
+							</el-table-column>
+						</el-table>
+					</el-tab-pane>
 				</el-tabs>
 			</div>
 		</el-dialog>
@@ -170,6 +198,13 @@
 				<iframe v-if="prototypeHtml" :srcdoc="prototypeHtml" sandbox="allow-scripts allow-forms" title="模块交互原型预览" />
 			</div>
 		</el-dialog>
+
+		<el-dialog v-model="uiPreviewVisible" :title="uiPreviewTitle" width="94%" top="3vh" append-to-body destroy-on-close @closed="clearUiPreview">
+			<div v-loading="uiPreviewLoading" class="ui-preview">
+				<iframe v-if="uiPreviewHtml" :srcdoc="uiPreviewHtml" sandbox="allow-scripts allow-forms" title="模块 UI 设计预览" />
+				<img v-else-if="uiPreviewImageUrl" :src="uiPreviewImageUrl" alt="用户上传的模块 UI 设计图" />
+			</div>
+		</el-dialog>
 	</div>
 </template>
 
@@ -179,17 +214,23 @@ import {
 	analyzeProjectMaterials,
 	createProject,
 	generateModulePrototype,
+	generateModuleUiDesign,
 	getModulePrototype,
+	getModuleUiDesign,
+	getModuleUiDesignContent,
 	getProjectPage,
 	getProjectWorkspace,
 	parseProjectMaterial,
 	reviewProjectFeature,
 	reviewModulePrototype,
+	reviewModuleUiDesign,
 	updateProjectFeature,
+	uploadModuleUiDesign,
 	uploadProjectMaterial,
 	type WorkflowFeature,
 	type WorkflowMaterial,
 	type ModulePrototype,
+	type ModuleUiDesign,
 	type WorkflowProject,
 	type WorkflowProjectWorkspace,
 } from '/@/api/workflow';
@@ -199,7 +240,7 @@ import { downBlobFile } from '/@/utils/other';
 const acceptedFiles = '.txt,.md,.csv,.json,.yaml,.yml,.doc,.docx,.xls,.xlsx,.pdf,.png,.jpg,.jpeg,.ppt,.pptx';
 const stageOptions = [
 	['MATERIAL_COLLECTION', '资料收集'], ['FEATURE_REVIEW', '功能点审核'], ['PROTOTYPE_READY', '原型准备'], ['PROTOTYPE_REVIEW', '原型审核'], ['UI_READY', 'UI 准备'], ['UI_DESIGN', 'UI 设计'],
-	['FRONTEND_DEVELOPMENT', '前端开发'], ['BACKEND_DEVELOPMENT', '后端开发'], ['INTEGRATION', '联调测试'], ['DELIVERY', '交付'],
+	['UI_REVIEW', 'UI 审核'], ['FRONTEND_READY', '前端开发准备'], ['FRONTEND_DEVELOPMENT', '前端开发'], ['BACKEND_DEVELOPMENT', '后端开发'], ['INTEGRATION', '联调测试'], ['DELIVERY', '交付'],
 ] as const;
 const loading = ref(false);
 const submitting = ref(false);
@@ -217,20 +258,27 @@ const prototypeLoading = ref(false);
 const prototypeBusyId = ref('');
 const prototypeHtml = ref('');
 const prototypeTitle = ref('模块交互原型');
+const uiBusyId = ref('');
+const uiPreviewVisible = ref(false);
+const uiPreviewLoading = ref(false);
+const uiPreviewHtml = ref('');
+const uiPreviewImageUrl = ref('');
+const uiPreviewTitle = ref('模块 UI 设计');
 const activeTab = ref('materials');
 const createFormRef = ref<FormInstance>();
 const featureFormRef = ref<FormInstance>();
 const createForm = reactive({ name: '', projectCode: '', techStack: 'Vue 3 + Spring Boot + MySQL', description: '' });
 const featureForm = reactive<Partial<WorkflowFeature>>({});
-const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [], prototypes: [] });
+const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [], prototypes: [], uiDesigns: [] });
 const createRules: FormRules = {
 	name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
 	projectCode: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
 };
 const featureRules: FormRules = { name: [{ required: true, message: '请输入功能点名称', trigger: 'blur' }] };
-const stageStep: Record<string, number> = { MATERIAL_COLLECTION: 0, FEATURE_REVIEW: 1, PROTOTYPE_READY: 2, PROTOTYPE_REVIEW: 2, UI_READY: 3, UI_DESIGN: 3, FRONTEND_DEVELOPMENT: 4, BACKEND_DEVELOPMENT: 5, INTEGRATION: 6, DELIVERY: 7 };
+const stageStep: Record<string, number> = { MATERIAL_COLLECTION: 0, FEATURE_REVIEW: 1, PROTOTYPE_READY: 2, PROTOTYPE_REVIEW: 2, UI_READY: 3, UI_DESIGN: 3, UI_REVIEW: 3, FRONTEND_READY: 4, FRONTEND_DEVELOPMENT: 4, BACKEND_DEVELOPMENT: 5, INTEGRATION: 6, DELIVERY: 7 };
 const activeStage = computed(() => stageStep[workspace.project?.currentStage] ?? 0);
 const approvedCount = computed(() => workspace.features.filter((item) => item.status === 'APPROVED').length);
+const uiApprovedCount = computed(() => workspace.uiDesigns.filter((item) => item.status === 'APPROVED').length);
 const canAnalyze = computed(() => workspace.materials.some((item) => item.parseStatus === 'PARSED') && workspace.features.length === 0);
 
 const stageLabel = (value?: string) => stageOptions.find(([key]) => key === value)?.[1] || value || '资料收集';
@@ -245,6 +293,9 @@ const modulePrototype = (moduleId: string) => workspace.prototypes.find((item) =
 const prototypeStatusLabel = (value?: string) => ({ PENDING_REVIEW: '待审核', APPROVED: '已通过', REJECTED: '已驳回', RETURNED: '已退回' })[value || ''] || '未生成';
 const prototypeStatusType = (value?: string): TagProps['type'] => ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' })[value || ''] as TagProps['type'] || 'info';
 const canGeneratePrototype = (status: string) => ['REQUIREMENT_APPROVED', 'PROTOTYPE_REVISION'].includes(status);
+const moduleUiDesign = (moduleId: string) => workspace.uiDesigns.find((item) => item.moduleId === moduleId);
+const uiSourceLabel = (value?: string) => ({ RULE_BASED_UI_V1: '工作流生成', USER_UPLOAD: '人工上传' })[value || ''] || '-';
+const canCreateUiDesign = (status: string) => ['PROTOTYPE_APPROVED', 'UI_REVISION'].includes(status);
 
 const loadData = async () => {
 	loading.value = true;
@@ -346,7 +397,60 @@ const reviewPrototype = async (moduleName: string, prototype: ModulePrototype | 
 	} finally { prototypeBusyId.value = ''; }
 };
 
+const generateUiDesign = async (module: WorkflowProjectWorkspace['modules'][number]) => {
+	try { await useMessageBox().confirm(`确认根据已通过原型生成“${module.name}”的 UI 设计新版本吗？`); } catch { return; }
+	uiBusyId.value = module.id;
+	try {
+		await generateModuleUiDesign(module.id);
+		useMessage().success('UI 设计草稿已生成并提交审核');
+		await loadWorkspace(); await loadData();
+	} finally { uiBusyId.value = ''; }
+};
+const uploadUiDesign = async (module: WorkflowProjectWorkspace['modules'][number], options: UploadRequestOptions) => {
+	uiBusyId.value = module.id;
+	try {
+		const formData = new FormData(); formData.append('file', options.file);
+		await uploadModuleUiDesign(module.id, formData);
+		options.onSuccess({}); useMessage().success('设计图已上传并提交审核');
+		await loadWorkspace(); await loadData();
+	} catch (error) { options.onError(error as Error); }
+	finally { uiBusyId.value = ''; }
+};
+const clearUiPreview = () => {
+	if (uiPreviewImageUrl.value) URL.revokeObjectURL(uiPreviewImageUrl.value);
+	uiPreviewImageUrl.value = '';
+	uiPreviewHtml.value = '';
+};
+const openUiDesign = async (moduleName: string, design?: ModuleUiDesign) => {
+	if (!design) return;
+	clearUiPreview();
+	uiPreviewVisible.value = true; uiPreviewLoading.value = true;
+	uiPreviewTitle.value = `${moduleName} · ${design.versionNo} · ${uiSourceLabel(design.sourceType)}`;
+	try {
+		const detail = (await getModuleUiDesign(design.versionId)).data;
+		if (detail.contentKind === 'HTML') uiPreviewHtml.value = detail.html || '';
+		else uiPreviewImageUrl.value = URL.createObjectURL(await getModuleUiDesignContent(design.versionId));
+	} finally { uiPreviewLoading.value = false; }
+};
+const reviewUiDesign = async (moduleName: string, design: ModuleUiDesign | undefined, action: 'APPROVE' | 'REJECT') => {
+	if (!design) return;
+	let comment = '';
+	if (action === 'REJECT') {
+		try { const result = await useMessageBox().prompt(`填写“${moduleName}”UI 设计的修改意见`, '驳回 UI 设计', { inputValidator: (value) => Boolean(value?.trim()) || '必须填写修改意见' }); comment = result.value; }
+		catch { return; }
+	} else {
+		try { await useMessageBox().confirm(`确认通过“${moduleName}”的 ${design.versionNo} UI 设计吗？`); } catch { return; }
+	}
+	uiBusyId.value = design.moduleId;
+	try {
+		await reviewModuleUiDesign(design.versionId, { action, comment });
+		useMessage().success(action === 'APPROVE' ? '模块 UI 设计已通过' : '模块 UI 设计已驳回');
+		await loadWorkspace(); await loadData();
+	} finally { uiBusyId.value = ''; }
+};
+
 onMounted(loadData);
+onBeforeUnmount(clearUiPreview);
 </script>
 
 <style scoped>
@@ -369,6 +473,10 @@ onMounted(loadData);
 .module-heading h3 { font-size: 16px; }
 .prototype-preview { height: calc(94vh - 120px); min-height: 520px; background: var(--el-fill-color-light); }
 .prototype-preview iframe { width: 100%; height: 100%; border: 1px solid var(--el-border-color); background: #fff; }
+.inline-upload { display: inline-flex; vertical-align: middle; }
+.ui-preview { display: flex; align-items: flex-start; justify-content: center; height: calc(94vh - 120px); min-height: 520px; overflow: auto; background: var(--el-fill-color-light); }
+.ui-preview iframe { width: 100%; height: 100%; border: 1px solid var(--el-border-color); background: #fff; }
+.ui-preview img { display: block; max-width: 100%; height: auto; background: #fff; box-shadow: 0 0 0 1px var(--el-border-color); }
 @media (max-width: 900px) {
 	.page-heading, .toolbar, .workspace-header { flex-direction: column; }
 	.toolbar-actions { width: 100%; flex-wrap: wrap; }
