@@ -480,3 +480,25 @@ INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `vi
 
 INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
 (1, 10023), (1, 10024), (1, 10025);
+
+-- V6: module frontend implementation notes, code generation and review.
+SET @wf_module_frontend_logic_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'wf_module' AND column_name = 'frontend_logic'
+);
+SET @wf_module_frontend_logic_sql = IF(
+  @wf_module_frontend_logic_exists = 0,
+  'ALTER TABLE `wf_module` ADD COLUMN `frontend_logic` text DEFAULT NULL AFTER `description`',
+  'SELECT 1'
+);
+PREPARE wf_module_frontend_logic_stmt FROM @wf_module_frontend_logic_sql;
+EXECUTE wf_module_frontend_logic_stmt;
+DEALLOCATE PREPARE wf_module_frontend_logic_stmt;
+
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10026, '模块前端逻辑编辑', 'workflow_frontend_edit', 10015, '0', 12, '1', 'admin'),
+(10027, '模块前端代码生成', 'workflow_frontend_generate', 10015, '0', 13, '1', 'admin'),
+(10028, '模块前端代码审核', 'workflow_frontend_review', 10015, '0', 14, '1', 'admin');
+
+INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
+(1, 10026), (1, 10027), (1, 10028);

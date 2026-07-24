@@ -179,6 +179,35 @@
 							</el-table-column>
 						</el-table>
 					</el-tab-pane>
+					<el-tab-pane :label="`前端开发 ${workspace.frontendCodes.length}`" name="frontend-codes">
+						<div class="toolbar">
+							<div><strong>模块前端开发与代码审核</strong><span>基于已通过的 UI 设计生成可预览、可下载的 Vue 3 代码草稿</span></div>
+							<el-tag :type="frontendApprovedCount === workspace.modules.length && frontendApprovedCount > 0 ? 'success' : 'warning'">已通过 {{ frontendApprovedCount }} / {{ workspace.modules.length }}</el-tag>
+						</div>
+						<el-empty v-if="!workspace.modules.length" description="模块 UI 设计审核完成后可进入前端开发" />
+						<el-table v-else :data="workspace.modules" border>
+							<el-table-column prop="moduleCode" label="模块编号" width="125" />
+							<el-table-column prop="name" label="模块" min-width="150" />
+							<el-table-column label="前端实现逻辑" min-width="240" show-overflow-tooltip><template #default="{ row }">{{ row.frontendLogic || '未补充，按功能点验收标准生成' }}</template></el-table-column>
+							<el-table-column label="代码版本" width="100"><template #default="{ row }">{{ moduleFrontendCode(row.id)?.versionNo || '-' }}</template></el-table-column>
+							<el-table-column label="文件" width="70" align="center"><template #default="{ row }">{{ moduleFrontendCode(row.id)?.fileCount ?? '-' }}</template></el-table-column>
+							<el-table-column label="生成器" width="180"><template #default="{ row }">{{ moduleFrontendCode(row.id)?.generator || '-' }}</template></el-table-column>
+							<el-table-column label="审核状态" width="110"><template #default="{ row }"><el-tag :type="prototypeStatusType(moduleFrontendCode(row.id)?.status)">{{ prototypeStatusLabel(moduleFrontendCode(row.id)?.status) }}</el-tag></template></el-table-column>
+							<el-table-column label="审核意见" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ moduleFrontendCode(row.id)?.reviewComment || '-' }}</template></el-table-column>
+							<el-table-column label="操作" width="360" fixed="right" align="center">
+								<template #default="{ row }">
+									<el-button v-if="canDevelopFrontend(row.status)" v-auth="'workflow_frontend_edit'" text type="primary" icon="Edit" @click="editFrontendLogic(row)">实现逻辑</el-button>
+									<el-button v-if="canDevelopFrontend(row.status)" v-auth="'workflow_frontend_generate'" text type="primary" icon="MagicStick" :loading="frontendBusyId === row.id" @click="generateFrontendCode(row)">{{ moduleFrontendCode(row.id) ? '重新生成' : '生成代码' }}</el-button>
+									<el-button v-if="moduleFrontendCode(row.id)" text icon="View" @click="openFrontendCode(row.name, moduleFrontendCode(row.id))">查看</el-button>
+									<el-button v-if="moduleFrontendCode(row.id)" text icon="Download" @click="downloadFrontendCode(row.name, moduleFrontendCode(row.id))">下载</el-button>
+									<template v-if="moduleFrontendCode(row.id)?.status === 'PENDING_REVIEW'">
+										<el-button v-auth="'workflow_frontend_review'" text type="success" @click="reviewFrontendCode(row.name, moduleFrontendCode(row.id), 'APPROVE')">通过</el-button>
+										<el-button v-auth="'workflow_frontend_review'" text type="danger" @click="reviewFrontendCode(row.name, moduleFrontendCode(row.id), 'REJECT')">驳回</el-button>
+									</template>
+								</template>
+							</el-table-column>
+						</el-table>
+					</el-tab-pane>
 				</el-tabs>
 			</div>
 		</el-dialog>
@@ -205,6 +234,37 @@
 				<img v-else-if="uiPreviewImageUrl" :src="uiPreviewImageUrl" alt="用户上传的模块 UI 设计图" />
 			</div>
 		</el-dialog>
+
+		<el-dialog v-model="frontendLogicVisible" title="模块前端实现逻辑" width="680px" append-to-body destroy-on-close>
+			<el-form label-position="top">
+				<el-form-item :label="frontendLogicModule?.name || '模块'">
+					<el-input v-model="frontendLogicText" type="textarea" :rows="9" maxlength="5000" show-word-limit placeholder="补充页面状态、交互规则、校验、异常反馈等实现要求；留空时按功能点验收标准生成。" />
+				</el-form-item>
+			</el-form>
+			<template #footer><el-button @click="frontendLogicVisible = false">取消</el-button><el-button type="primary" :loading="frontendBusyId === frontendLogicModule?.id" @click="saveFrontendLogic">保存</el-button></template>
+		</el-dialog>
+
+		<el-dialog v-model="frontendCodeVisible" :title="frontendCodeTitle" width="96%" top="2vh" append-to-body destroy-on-close>
+			<div v-loading="frontendCodeLoading" class="frontend-code-review">
+				<div class="code-summary">
+					<el-tag effect="plain">{{ frontendCodeDetail?.generator }}</el-tag>
+					<span>{{ frontendCodeDetail?.files.length || 0 }} 个文件</span>
+					<span>UI 版本 ID：{{ frontendCodeDetail?.uiDesignVersionId }}</span>
+				</div>
+				<el-tabs v-if="frontendCodeDetail" v-model="frontendCodeTab" class="code-tabs">
+					<el-tab-pane label="运行预览" name="preview"><iframe :srcdoc="frontendCodeDetail.previewHtml" sandbox="allow-scripts allow-forms" title="模块前端代码运行预览" /></el-tab-pane>
+					<el-tab-pane label="代码文件" name="files">
+						<div class="code-browser">
+							<el-menu :default-active="selectedCodePath" @select="selectCodeFile">
+								<el-menu-item v-for="file in frontendCodeDetail.files" :key="file.path" :index="file.path"><span>{{ file.path }}</span></el-menu-item>
+							</el-menu>
+							<div class="code-content"><div>{{ selectedCodeFile?.path }}</div><pre><code>{{ selectedCodeFile?.content }}</code></pre></div>
+						</div>
+					</el-tab-pane>
+					<el-tab-pane label="实现逻辑" name="logic"><pre class="logic-content">{{ frontendCodeDetail.frontendLogic || '未补充' }}</pre></el-tab-pane>
+				</el-tabs>
+			</div>
+		</el-dialog>
 	</div>
 </template>
 
@@ -215,6 +275,8 @@ import {
 	createProject,
 	generateModulePrototype,
 	generateModuleUiDesign,
+	generateModuleFrontendCode,
+	getModuleFrontendCode,
 	getModulePrototype,
 	getModuleUiDesign,
 	getModuleUiDesignContent,
@@ -224,6 +286,8 @@ import {
 	reviewProjectFeature,
 	reviewModulePrototype,
 	reviewModuleUiDesign,
+	reviewModuleFrontendCode,
+	saveFrontendDevelopmentSpec,
 	updateProjectFeature,
 	uploadModuleUiDesign,
 	uploadProjectMaterial,
@@ -231,6 +295,9 @@ import {
 	type WorkflowMaterial,
 	type ModulePrototype,
 	type ModuleUiDesign,
+	type ModuleFrontendCode,
+	type ModuleFrontendCodeDetail,
+	type GeneratedCodeFile,
 	type WorkflowProject,
 	type WorkflowProjectWorkspace,
 } from '/@/api/workflow';
@@ -240,7 +307,7 @@ import { downBlobFile } from '/@/utils/other';
 const acceptedFiles = '.txt,.md,.csv,.json,.yaml,.yml,.doc,.docx,.xls,.xlsx,.pdf,.png,.jpg,.jpeg,.ppt,.pptx';
 const stageOptions = [
 	['MATERIAL_COLLECTION', '资料收集'], ['FEATURE_REVIEW', '功能点审核'], ['PROTOTYPE_READY', '原型准备'], ['PROTOTYPE_REVIEW', '原型审核'], ['UI_READY', 'UI 准备'], ['UI_DESIGN', 'UI 设计'],
-	['UI_REVIEW', 'UI 审核'], ['FRONTEND_READY', '前端开发准备'], ['FRONTEND_DEVELOPMENT', '前端开发'], ['BACKEND_DEVELOPMENT', '后端开发'], ['INTEGRATION', '联调测试'], ['DELIVERY', '交付'],
+	['UI_REVIEW', 'UI 审核'], ['FRONTEND_READY', '前端开发准备'], ['FRONTEND_DEVELOPMENT', '前端开发'], ['FRONTEND_REVIEW', '前端代码审核'], ['BACKEND_READY', '后端开发准备'], ['BACKEND_DEVELOPMENT', '后端开发'], ['INTEGRATION', '联调测试'], ['DELIVERY', '交付'],
 ] as const;
 const loading = ref(false);
 const submitting = ref(false);
@@ -264,21 +331,33 @@ const uiPreviewLoading = ref(false);
 const uiPreviewHtml = ref('');
 const uiPreviewImageUrl = ref('');
 const uiPreviewTitle = ref('模块 UI 设计');
+const frontendBusyId = ref('');
+const frontendLogicVisible = ref(false);
+const frontendLogicModule = ref<WorkflowProjectWorkspace['modules'][number]>();
+const frontendLogicText = ref('');
+const frontendCodeVisible = ref(false);
+const frontendCodeLoading = ref(false);
+const frontendCodeTitle = ref('模块前端代码');
+const frontendCodeDetail = ref<ModuleFrontendCodeDetail>();
+const frontendCodeTab = ref('preview');
+const selectedCodePath = ref('');
 const activeTab = ref('materials');
 const createFormRef = ref<FormInstance>();
 const featureFormRef = ref<FormInstance>();
 const createForm = reactive({ name: '', projectCode: '', techStack: 'Vue 3 + Spring Boot + MySQL', description: '' });
 const featureForm = reactive<Partial<WorkflowFeature>>({});
-const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [], prototypes: [], uiDesigns: [] });
+const workspace = reactive<WorkflowProjectWorkspace>({ project: {} as WorkflowProject, materials: [], modules: [], features: [], prototypes: [], uiDesigns: [], frontendCodes: [] });
 const createRules: FormRules = {
 	name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }],
 	projectCode: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
 };
 const featureRules: FormRules = { name: [{ required: true, message: '请输入功能点名称', trigger: 'blur' }] };
-const stageStep: Record<string, number> = { MATERIAL_COLLECTION: 0, FEATURE_REVIEW: 1, PROTOTYPE_READY: 2, PROTOTYPE_REVIEW: 2, UI_READY: 3, UI_DESIGN: 3, UI_REVIEW: 3, FRONTEND_READY: 4, FRONTEND_DEVELOPMENT: 4, BACKEND_DEVELOPMENT: 5, INTEGRATION: 6, DELIVERY: 7 };
+const stageStep: Record<string, number> = { MATERIAL_COLLECTION: 0, FEATURE_REVIEW: 1, PROTOTYPE_READY: 2, PROTOTYPE_REVIEW: 2, UI_READY: 3, UI_DESIGN: 3, UI_REVIEW: 3, FRONTEND_READY: 4, FRONTEND_DEVELOPMENT: 4, FRONTEND_REVIEW: 4, BACKEND_READY: 5, BACKEND_DEVELOPMENT: 5, INTEGRATION: 6, DELIVERY: 7 };
 const activeStage = computed(() => stageStep[workspace.project?.currentStage] ?? 0);
 const approvedCount = computed(() => workspace.features.filter((item) => item.status === 'APPROVED').length);
 const uiApprovedCount = computed(() => workspace.uiDesigns.filter((item) => item.status === 'APPROVED').length);
+const frontendApprovedCount = computed(() => workspace.frontendCodes.filter((item) => item.status === 'APPROVED').length);
+const selectedCodeFile = computed<GeneratedCodeFile | undefined>(() => frontendCodeDetail.value?.files.find((file) => file.path === selectedCodePath.value));
 const canAnalyze = computed(() => workspace.materials.some((item) => item.parseStatus === 'PARSED') && workspace.features.length === 0);
 
 const stageLabel = (value?: string) => stageOptions.find(([key]) => key === value)?.[1] || value || '资料收集';
@@ -296,6 +375,8 @@ const canGeneratePrototype = (status: string) => ['REQUIREMENT_APPROVED', 'PROTO
 const moduleUiDesign = (moduleId: string) => workspace.uiDesigns.find((item) => item.moduleId === moduleId);
 const uiSourceLabel = (value?: string) => ({ RULE_BASED_UI_V1: '工作流生成', USER_UPLOAD: '人工上传' })[value || ''] || '-';
 const canCreateUiDesign = (status: string) => ['PROTOTYPE_APPROVED', 'UI_REVISION'].includes(status);
+const moduleFrontendCode = (moduleId: string) => workspace.frontendCodes.find((item) => item.moduleId === moduleId);
+const canDevelopFrontend = (status: string) => ['UI_APPROVED', 'FRONTEND_REVISION'].includes(status);
 
 const loadData = async () => {
 	loading.value = true;
@@ -449,6 +530,63 @@ const reviewUiDesign = async (moduleName: string, design: ModuleUiDesign | undef
 	} finally { uiBusyId.value = ''; }
 };
 
+const editFrontendLogic = (module: WorkflowProjectWorkspace['modules'][number]) => {
+	frontendLogicModule.value = module;
+	frontendLogicText.value = module.frontendLogic || '';
+	frontendLogicVisible.value = true;
+};
+const saveFrontendLogic = async () => {
+	const module = frontendLogicModule.value;
+	if (!module) return;
+	frontendBusyId.value = module.id;
+	try {
+		await saveFrontendDevelopmentSpec(module.id, { logic: frontendLogicText.value });
+		frontendLogicVisible.value = false;
+		useMessage().success('模块前端实现逻辑已保存');
+		await loadWorkspace();
+	} finally { frontendBusyId.value = ''; }
+};
+const generateFrontendCode = async (module: WorkflowProjectWorkspace['modules'][number]) => {
+	try { await useMessageBox().confirm(`确认根据已通过 UI 设计生成“${module.name}”的前端代码新版本吗？`); } catch { return; }
+	frontendBusyId.value = module.id;
+	try {
+		await generateModuleFrontendCode(module.id);
+		useMessage().success('前端代码已生成并提交审核');
+		await loadWorkspace(); await loadData();
+	} finally { frontendBusyId.value = ''; }
+};
+const selectCodeFile = (path: string) => { selectedCodePath.value = path; };
+const openFrontendCode = async (moduleName: string, code?: ModuleFrontendCode) => {
+	if (!code) return;
+	frontendCodeVisible.value = true; frontendCodeLoading.value = true; frontendCodeDetail.value = undefined;
+	frontendCodeTitle.value = `${moduleName} · ${code.versionNo} · 前端代码审核`;
+	frontendCodeTab.value = 'preview'; selectedCodePath.value = '';
+	try {
+		frontendCodeDetail.value = (await getModuleFrontendCode(code.versionId)).data;
+		selectedCodePath.value = frontendCodeDetail.value.files[0]?.path || '';
+	} finally { frontendCodeLoading.value = false; }
+};
+const downloadFrontendCode = (moduleName: string, code?: ModuleFrontendCode) => {
+	if (!code) return;
+	downBlobFile(`/admin/workflow/frontend-codes/${code.versionId}/download`, {}, `${moduleName}-${code.versionNo}-frontend.zip`);
+};
+const reviewFrontendCode = async (moduleName: string, code: ModuleFrontendCode | undefined, action: 'APPROVE' | 'REJECT') => {
+	if (!code) return;
+	let comment = '';
+	if (action === 'REJECT') {
+		try { const result = await useMessageBox().prompt(`填写“${moduleName}”前端代码的修改意见`, '驳回前端代码', { inputValidator: (value) => Boolean(value?.trim()) || '必须填写修改意见' }); comment = result.value; }
+		catch { return; }
+	} else {
+		try { await useMessageBox().confirm(`确认通过“${moduleName}”的 ${code.versionNo} 前端代码吗？`); } catch { return; }
+	}
+	frontendBusyId.value = code.moduleId;
+	try {
+		await reviewModuleFrontendCode(code.versionId, { action, comment });
+		useMessage().success(action === 'APPROVE' ? '模块前端代码已通过' : '模块前端代码已驳回');
+		await loadWorkspace(); await loadData();
+	} finally { frontendBusyId.value = ''; }
+};
+
 onMounted(loadData);
 onBeforeUnmount(clearUiPreview);
 </script>
@@ -477,10 +615,23 @@ onBeforeUnmount(clearUiPreview);
 .ui-preview { display: flex; align-items: flex-start; justify-content: center; height: calc(94vh - 120px); min-height: 520px; overflow: auto; background: var(--el-fill-color-light); }
 .ui-preview iframe { width: 100%; height: 100%; border: 1px solid var(--el-border-color); background: #fff; }
 .ui-preview img { display: block; max-width: 100%; height: auto; background: #fff; box-shadow: 0 0 0 1px var(--el-border-color); }
+.frontend-code-review { min-height: calc(94vh - 145px); }
+.code-summary { display: flex; align-items: center; gap: 14px; min-height: 36px; color: var(--el-text-color-secondary); }
+.code-tabs iframe { width: 100%; height: calc(94vh - 230px); min-height: 500px; border: 1px solid var(--el-border-color); background: #fff; }
+.code-browser { display: grid; grid-template-columns: minmax(260px, 32%) 1fr; height: calc(94vh - 230px); min-height: 500px; border: 1px solid var(--el-border-color); }
+.code-browser .el-menu { overflow: auto; border-right: 1px solid var(--el-border-color); }
+.code-browser .el-menu-item { min-width: max-content; }
+.code-content { min-width: 0; overflow: auto; background: #111827; color: #e5e7eb; }
+.code-content > div { position: sticky; top: 0; padding: 10px 16px; background: #1f2937; color: #cbd5e1; }
+.code-content pre { padding: 2px 16px 18px; margin: 0; font: 13px/1.65 Consolas, 'Courier New', monospace; white-space: pre; }
+.logic-content { min-height: 240px; padding: 18px; margin: 0; border: 1px solid var(--el-border-color); background: var(--el-fill-color-light); font: 14px/1.7 Consolas, 'Microsoft YaHei', sans-serif; white-space: pre-wrap; }
 @media (max-width: 900px) {
 	.page-heading, .toolbar, .workspace-header { flex-direction: column; }
 	.toolbar-actions { width: 100%; flex-wrap: wrap; }
 	.stage-band { overflow-x: auto; }
 	.stage-band :deep(.el-steps) { min-width: 760px; }
+	.code-browser { grid-template-columns: 1fr; height: auto; }
+	.code-browser .el-menu { max-height: 220px; border-right: 0; border-bottom: 1px solid var(--el-border-color); }
+	.code-content { min-height: 420px; }
 }
 </style>
