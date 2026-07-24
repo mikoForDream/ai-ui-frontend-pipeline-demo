@@ -2,6 +2,8 @@
 
 本项目统一采用 Pig 全栈技术路线，不再保留 React 技术路线或其他备选框架。
 
+AI 模型服务的后端环境变量和密钥要求见 [docs/ai-model-configuration.md](docs/ai-model-configuration.md)。
+
 ## 技术基线
 
 - 后端：Pig `v3.9.2`

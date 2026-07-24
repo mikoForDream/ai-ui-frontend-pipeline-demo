@@ -15,12 +15,12 @@ import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.DigestUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -30,7 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/** 项目资料存储与确定性文本抽取。 */
+/** 项目资料存储、本地文本抽取与 AI 多模态解析。 */
 @Service
 @RequiredArgsConstructor
 public class WorkflowMaterialService {
@@ -45,8 +45,8 @@ public class WorkflowMaterialService {
 	private final FileTemplate fileTemplate;
 	private final WorkflowProjectService projectService;
 	private final WorkflowMaterialMapper materialMapper;
+	private final WorkflowAiGenerationService aiGenerationService;
 
-	@Transactional(rollbackFor = Exception.class)
 	public WorkflowMaterial upload(Long projectId, MultipartFile file) {
 		projectService.requireProject(projectId);
 		if (file == null || file.isEmpty()) {
@@ -86,15 +86,24 @@ public class WorkflowMaterialService {
 		return parse(material.getId());
 	}
 
-	@Transactional(rollbackFor = Exception.class)
 	public WorkflowMaterial parse(Long materialId) {
 		WorkflowMaterial material = requireMaterial(materialId);
 		try (InputStream input = (InputStream) fileTemplate.getObject(material.getBucketName(), material.getObjectName())) {
-			String text = extract(input, material.getExtension());
+			byte[] bytes = input.readAllBytes();
+			String text = extract(new ByteArrayInputStream(bytes), material.getExtension());
 			if (text == null) {
-				material.setParseStatus("READY_FOR_AI");
-				material.setExtractedText(null);
-				material.setParseMessage("文件已保存，等待多模态或专用文档解析器处理");
+				if (!aiGenerationService.isConfigured()) {
+					material.setParseStatus("READY_FOR_AI");
+					material.setExtractedText(null);
+					material.setParseMessage("文件已保存，配置 AI 模型服务后可重新解析");
+				}
+				else {
+					text = aiGenerationService.extractMaterial(material.getOriginalName(), material.getExtension(),
+							material.getContentType(), bytes);
+					material.setParseStatus("PARSED");
+					material.setExtractedText(limit(text));
+					material.setParseMessage("AI 已解析 " + material.getExtractedText().length() + " 个字符");
+				}
 			}
 			else {
 				material.setParseStatus("PARSED");

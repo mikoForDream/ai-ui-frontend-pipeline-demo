@@ -6,8 +6,16 @@
 					<h2>研发项目</h2>
 					<p>从资料收集、功能点审核开始，逐步推进原型、UI 和全栈开发。</p>
 				</div>
-				<el-button v-auth="'workflow_project_edit'" type="primary" icon="Plus" @click="openCreate">新建项目</el-button>
+				<div class="heading-actions">
+					<el-tag :type="aiModelStatus?.configured ? 'success' : 'danger'" effect="plain">
+						{{ aiModelStatus?.configured ? `${aiModelStatus.model} 已配置` : 'AI 未配置' }}
+					</el-tag>
+					<el-button v-auth="'workflow_material_analyze'" icon="Connection" :loading="checkingAi" :disabled="!aiModelStatus?.configured" @click="checkAiConnectivity">检测连接</el-button>
+					<el-button v-auth="'workflow_project_edit'" type="primary" icon="Plus" @click="openCreate">新建项目</el-button>
+				</div>
 			</div>
+			<el-alert v-if="aiModelStatus && !aiModelStatus.configured" class="ai-config-alert" type="warning" :closable="false" show-icon
+				title="AI 模型服务未配置，生成操作暂不可用。请在后端设置 OPENAI_API_KEY 后重启服务。" />
 
 			<el-form :inline="true" :model="query" class="search-form">
 				<el-form-item label="项目名称"><el-input v-model="query.name" clearable placeholder="输入名称" @keyup.enter="loadData" /></el-form-item>
@@ -83,7 +91,7 @@
 								<el-button v-auth="'workflow_material_analyze'" type="primary" icon="MagicStick" :loading="analyzing" :disabled="!canAnalyze" @click="analyzeMaterials">分析并生成功能点</el-button>
 							</div>
 						</div>
-						<el-alert type="info" :closable="false" show-icon title="文本、Markdown、Word 和 Excel 会立即抽取内容；PDF、图片和演示文稿先保存，等待 AI 解析器处理。" />
+						<el-alert type="info" :closable="false" show-icon title="文本、Markdown、Word 和 Excel 会立即抽取内容；PDF、图片和演示文稿由已配置的 AI 模型解析。" />
 						<el-table :data="workspace.materials" border class="data-table">
 							<el-table-column prop="originalName" label="文件名" min-width="240" show-overflow-tooltip />
 							<el-table-column prop="extension" label="类型" width="80" align="center"><template #default="{ row }">{{ row.extension.toUpperCase() }}</template></el-table-column>
@@ -93,7 +101,9 @@
 							<el-table-column label="操作" width="160" fixed="right" align="center">
 								<template #default="{ row }">
 									<el-button text type="primary" icon="Download" @click="downloadMaterial(row)">下载</el-button>
-									<el-button v-if="row.parseStatus === 'FAILED'" text type="warning" @click="reparse(row)">重试</el-button>
+									<el-button v-if="['FAILED', 'READY_FOR_AI'].includes(row.parseStatus)" text type="warning" :disabled="!aiModelStatus?.configured" @click="reparse(row)">
+										{{ row.parseStatus === 'READY_FOR_AI' ? 'AI 解析' : '重试' }}
+									</el-button>
 								</template>
 							</el-table-column>
 						</el-table>
@@ -166,7 +176,7 @@
 							<el-table-column label="审核意见" min-width="180" show-overflow-tooltip><template #default="{ row }">{{ moduleUiDesign(row.id)?.reviewComment || '-' }}</template></el-table-column>
 							<el-table-column label="操作" width="410" fixed="right" align="center">
 								<template #default="{ row }">
-									<el-button v-if="canCreateUiDesign(row.status)" v-auth="'workflow_ui_generate'" text type="primary" icon="MagicStick" :loading="uiBusyId === row.id" @click="generateUiDesign(row)">{{ moduleUiDesign(row.id) ? '重新生成' : '生成草稿' }}</el-button>
+									<el-button v-if="canGenerateUiDesign(row.status)" v-auth="'workflow_ui_generate'" text type="primary" icon="MagicStick" :loading="uiBusyId === row.id" @click="generateUiDesign(row)">{{ moduleUiDesign(row.id) ? '重新生成' : '生成草稿' }}</el-button>
 									<el-upload v-if="canCreateUiDesign(row.status)" v-auth="'workflow_ui_upload'" class="inline-upload" :show-file-list="false" :http-request="(options) => uploadUiDesign(row, options)" accept=".png,.jpg,.jpeg,.webp">
 										<el-button text type="primary" icon="Upload" :loading="uiBusyId === row.id">上传设计图</el-button>
 									</el-upload>
@@ -197,7 +207,7 @@
 							<el-table-column label="操作" width="360" fixed="right" align="center">
 								<template #default="{ row }">
 									<el-button v-if="canDevelopFrontend(row.status)" v-auth="'workflow_frontend_edit'" text type="primary" icon="Edit" @click="editFrontendLogic(row)">实现逻辑</el-button>
-									<el-button v-if="canDevelopFrontend(row.status)" v-auth="'workflow_frontend_generate'" text type="primary" icon="MagicStick" :loading="frontendBusyId === row.id" @click="generateFrontendCode(row)">{{ moduleFrontendCode(row.id) ? '重新生成' : '生成代码' }}</el-button>
+									<el-button v-if="canGenerateFrontend(row.status)" v-auth="'workflow_frontend_generate'" text type="primary" icon="MagicStick" :loading="frontendBusyId === row.id" @click="generateFrontendCode(row)">{{ moduleFrontendCode(row.id) ? '重新生成' : '生成代码' }}</el-button>
 									<el-button v-if="moduleFrontendCode(row.id)" text icon="View" @click="openFrontendCode(row.name, moduleFrontendCode(row.id))">查看</el-button>
 									<el-button v-if="moduleFrontendCode(row.id)" text icon="Download" @click="downloadFrontendCode(row.name, moduleFrontendCode(row.id))">下载</el-button>
 									<template v-if="moduleFrontendCode(row.id)?.status === 'PENDING_REVIEW'">
@@ -272,6 +282,7 @@
 import type { FormInstance, FormRules, TagProps, UploadRequestOptions } from 'element-plus';
 import {
 	analyzeProjectMaterials,
+	checkAiModelConnectivity,
 	createProject,
 	generateModulePrototype,
 	generateModuleUiDesign,
@@ -280,6 +291,7 @@ import {
 	getModulePrototype,
 	getModuleUiDesign,
 	getModuleUiDesignContent,
+	getAiModelStatus,
 	getProjectPage,
 	getProjectWorkspace,
 	parseProjectMaterial,
@@ -298,6 +310,7 @@ import {
 	type ModuleFrontendCode,
 	type ModuleFrontendCodeDetail,
 	type GeneratedCodeFile,
+	type AiModelStatus,
 	type WorkflowProject,
 	type WorkflowProjectWorkspace,
 } from '/@/api/workflow';
@@ -314,6 +327,8 @@ const submitting = ref(false);
 const uploading = ref(false);
 const analyzing = ref(false);
 const workspaceLoading = ref(false);
+const checkingAi = ref(false);
+const aiModelStatus = ref<AiModelStatus>();
 const rows = ref<WorkflowProject[]>([]);
 const query = reactive({ name: '', status: '' });
 const pagination = reactive({ current: 1, size: 10, total: 0 });
@@ -358,7 +373,7 @@ const approvedCount = computed(() => workspace.features.filter((item) => item.st
 const uiApprovedCount = computed(() => workspace.uiDesigns.filter((item) => item.status === 'APPROVED').length);
 const frontendApprovedCount = computed(() => workspace.frontendCodes.filter((item) => item.status === 'APPROVED').length);
 const selectedCodeFile = computed<GeneratedCodeFile | undefined>(() => frontendCodeDetail.value?.files.find((file) => file.path === selectedCodePath.value));
-const canAnalyze = computed(() => workspace.materials.some((item) => item.parseStatus === 'PARSED') && workspace.features.length === 0);
+const canAnalyze = computed(() => Boolean(aiModelStatus.value?.configured) && workspace.materials.some((item) => item.parseStatus === 'PARSED') && workspace.features.length === 0);
 
 const stageLabel = (value?: string) => stageOptions.find(([key]) => key === value)?.[1] || value || '资料收集';
 const parseStatusLabel = (value: string) => ({ UPLOADED: '已上传', PARSED: '已解析', READY_FOR_AI: '等待 AI', FAILED: '解析失败' })[value] || value;
@@ -371,12 +386,23 @@ const moduleFeatures = (moduleId: string) => workspace.features.filter((item) =>
 const modulePrototype = (moduleId: string) => workspace.prototypes.find((item) => item.moduleId === moduleId);
 const prototypeStatusLabel = (value?: string) => ({ PENDING_REVIEW: '待审核', APPROVED: '已通过', REJECTED: '已驳回', RETURNED: '已退回' })[value || ''] || '未生成';
 const prototypeStatusType = (value?: string): TagProps['type'] => ({ APPROVED: 'success', REJECTED: 'danger', RETURNED: 'warning' })[value || ''] as TagProps['type'] || 'info';
-const canGeneratePrototype = (status: string) => ['REQUIREMENT_APPROVED', 'PROTOTYPE_REVISION'].includes(status);
+const canGeneratePrototype = (status: string) => Boolean(aiModelStatus.value?.configured) && ['REQUIREMENT_APPROVED', 'PROTOTYPE_REVISION'].includes(status);
 const moduleUiDesign = (moduleId: string) => workspace.uiDesigns.find((item) => item.moduleId === moduleId);
-const uiSourceLabel = (value?: string) => ({ RULE_BASED_UI_V1: '工作流生成', USER_UPLOAD: '人工上传' })[value || ''] || '-';
+const uiSourceLabel = (value?: string) => ({ AI_RESPONSES_V1: 'AI 生成', RULE_BASED_UI_V1: '旧版规则生成', USER_UPLOAD: '人工上传' })[value || ''] || '-';
 const canCreateUiDesign = (status: string) => ['PROTOTYPE_APPROVED', 'UI_REVISION'].includes(status);
+const canGenerateUiDesign = (status: string) => Boolean(aiModelStatus.value?.configured) && canCreateUiDesign(status);
 const moduleFrontendCode = (moduleId: string) => workspace.frontendCodes.find((item) => item.moduleId === moduleId);
 const canDevelopFrontend = (status: string) => ['UI_APPROVED', 'FRONTEND_REVISION'].includes(status);
+const canGenerateFrontend = (status: string) => Boolean(aiModelStatus.value?.configured) && canDevelopFrontend(status);
+
+const loadAiModelStatus = async () => { aiModelStatus.value = (await getAiModelStatus()).data; };
+const checkAiConnectivity = async () => {
+	checkingAi.value = true;
+	try {
+		aiModelStatus.value = (await checkAiModelConnectivity()).data;
+		useMessage().success(`AI 模型 ${aiModelStatus.value?.model} 连接正常`);
+	} finally { checkingAi.value = false; }
+};
 
 const loadData = async () => {
 	loading.value = true;
@@ -587,7 +613,7 @@ const reviewFrontendCode = async (moduleName: string, code: ModuleFrontendCode |
 	} finally { frontendBusyId.value = ''; }
 };
 
-onMounted(loadData);
+onMounted(() => { loadData(); loadAiModelStatus(); });
 onBeforeUnmount(clearUiPreview);
 </script>
 
@@ -595,6 +621,8 @@ onBeforeUnmount(clearUiPreview);
 .project-page { padding: 20px; }
 .page-heading, .workspace-header, .toolbar, .module-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .page-heading { margin-bottom: 20px; }
+.heading-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ai-config-alert { margin-bottom: 16px; }
 .page-heading h2, .workspace-header h2, .module-heading h3 { margin: 0 0 6px; }
 .page-heading p, .workspace-header p, .toolbar span, .module-heading span { margin: 0; color: var(--el-text-color-secondary); }
 .search-form { padding: 16px 16px 0; margin-bottom: 16px; border-radius: 8px; background: var(--el-fill-color-light); }

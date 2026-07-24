@@ -24,7 +24,7 @@ import java.util.List;
 public class RequirementAnalysisService {
 
 	private final WorkflowProjectService projectService;
-	private final RequirementDraftExtractor extractor;
+	private final WorkflowAiGenerationService aiGenerationService;
 	private final WorkflowProjectMapper projectMapper;
 	private final WorkflowMaterialMapper materialMapper;
 	private final WorkflowModuleMapper moduleMapper;
@@ -49,33 +49,28 @@ public class RequirementAnalysisService {
 			throw new CheckedException("没有可分析的已解析资料");
 		}
 
-		List<RequirementDraftExtractor.DraftModule> drafts;
-		try {
-			drafts = extractor.extract(documents);
-		}
-		catch (IllegalArgumentException exception) {
-			throw new CheckedException(exception.getMessage());
-		}
+		List<WorkflowAiGenerationService.AiDraftModule> drafts = aiGenerationService
+				.analyzeRequirements(project, documents).modules();
 		int featureIndex = 1;
 		int moduleIndex = 1;
-		for (RequirementDraftExtractor.DraftModule draft : drafts) {
+		for (WorkflowAiGenerationService.AiDraftModule draft : drafts) {
 			WorkflowModule module = new WorkflowModule();
 			module.setProjectId(projectId);
 			module.setModuleCode("MODULE_" + String.format("%03d", moduleIndex));
 			module.setName(draft.name());
-			module.setDescription("根据项目资料自动拆分，需完成需求审核后进入原型阶段");
+			module.setDescription(draft.description());
 			module.setSortOrder(moduleIndex * 10);
 			module.setStatus("REQUIREMENT_REVIEW");
 			moduleMapper.insert(module);
-			for (String featureName : draft.features()) {
+			for (WorkflowAiGenerationService.AiDraftFeature draftFeature : draft.features()) {
 				WorkflowFeature feature = new WorkflowFeature();
 				feature.setProjectId(projectId);
 				feature.setModuleId(module.getId());
 				feature.setFeatureCode("FEAT_" + String.format("%03d", featureIndex++));
-				feature.setName(featureName);
-				feature.setDescription(featureName);
-				feature.setAcceptanceCriteria("用户可以完成“" + featureName + "”，并获得明确的成功或失败反馈。");
-				feature.setPriority("MEDIUM");
+				feature.setName(draftFeature.name());
+				feature.setDescription(draftFeature.description());
+				feature.setAcceptanceCriteria(draftFeature.acceptanceCriteria());
+				feature.setPriority(draftFeature.priority());
 				feature.setStatus("PENDING_REVIEW");
 				feature.setVersion(1);
 				featureMapper.insert(feature);
@@ -84,7 +79,7 @@ public class RequirementAnalysisService {
 		}
 		project.setCurrentStage("FEATURE_REVIEW");
 		projectMapper.updateById(project);
-		return new RequirementAnalysisResult(drafts.size(), featureIndex - 1, extractor.analyzerName());
+		return new RequirementAnalysisResult(drafts.size(), featureIndex - 1, WorkflowAiGenerationService.GENERATOR);
 	}
 
 }

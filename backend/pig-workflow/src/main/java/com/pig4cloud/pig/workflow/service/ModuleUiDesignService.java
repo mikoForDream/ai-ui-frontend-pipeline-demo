@@ -41,14 +41,14 @@ public class ModuleUiDesignService {
 
 	private static final String BUCKET = "workflow-ui-designs";
 	private static final String ARTIFACT_TYPE = "UI_DESIGN";
-	private static final String GENERATOR = "RULE_BASED_UI_V1";
+	private static final String GENERATOR = WorkflowAiGenerationService.GENERATOR;
 	private static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
 	private static final Set<String> IMAGE_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
 	private static final Set<String> REVIEW_ACTIONS = Set.of("APPROVE", "REJECT", "RETURN");
 
 	private final ObjectMapper objectMapper;
 	private final FileTemplate fileTemplate;
-	private final UiDesignRenderer renderer;
+	private final WorkflowAiGenerationService aiGenerationService;
 	private final WorkflowProjectMapper projectMapper;
 	private final WorkflowModuleMapper moduleMapper;
 	private final WorkflowFeatureMapper featureMapper;
@@ -61,8 +61,9 @@ public class ModuleUiDesignService {
 		WorkflowProject project = requireProject(module.getProjectId());
 		List<WorkflowFeature> features = approvedFeatures(moduleId);
 		WorkflowArtifact artifact = prepareArtifact(module);
-		String html = renderer.render(project, module, features);
-		WorkflowArtifactVersion version = newVersion(artifact, "RULE_BASED_UI_V1", checksum(html),
+		String html = aiGenerationService.generateUiDesign(project, module, features, approvedPrototypeHtml(module),
+				currentReviewComment(artifact));
+		WorkflowArtifactVersion version = newVersion(artifact, GENERATOR, checksum(html),
 				writeContent(Map.of("kind", "HTML", "generator", GENERATOR, "html", html)));
 		finishPending(artifact, module, project, version);
 		return summary(artifact, version);
@@ -204,6 +205,28 @@ public class ModuleUiDesignService {
 			}
 		}
 		return artifact;
+	}
+
+	private String approvedPrototypeHtml(WorkflowModule module) {
+		WorkflowArtifact artifact = artifactMapper.selectOne(Wrappers.<WorkflowArtifact>lambdaQuery()
+				.eq(WorkflowArtifact::getProjectId, module.getProjectId())
+				.eq(WorkflowArtifact::getModuleId, module.getId())
+				.eq(WorkflowArtifact::getArtifactType, "PROTOTYPE"));
+		if (artifact == null || artifact.getCurrentVersionId() == null) {
+			throw new CheckedException("模块缺少已审核原型");
+		}
+		WorkflowArtifactVersion version = versionMapper.selectById(artifact.getCurrentVersionId());
+		if (version == null || !"APPROVED".equals(version.getStatus())) {
+			throw new CheckedException("模块原型尚未通过审核");
+		}
+		try { return objectMapper.readTree(version.getContentJson()).path("html").asText(); }
+		catch (JsonProcessingException exception) { throw new CheckedException("读取已审核原型失败"); }
+	}
+
+	private String currentReviewComment(WorkflowArtifact artifact) {
+		if (artifact == null || artifact.getCurrentVersionId() == null) return null;
+		WorkflowArtifactVersion version = versionMapper.selectById(artifact.getCurrentVersionId());
+		return version == null ? null : version.getReviewComment();
 	}
 
 	private WorkflowArtifactVersion newVersion(WorkflowArtifact artifact, String sourceType, String checksum,

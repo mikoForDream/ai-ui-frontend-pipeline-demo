@@ -127,11 +127,19 @@ export interface ModuleUiDesign {
 	versionId: string;
 	versionNo: string;
 	status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'RETURNED';
-	sourceType: 'RULE_BASED_UI_V1' | 'USER_UPLOAD';
+	sourceType: 'AI_RESPONSES_V1' | 'RULE_BASED_UI_V1' | 'USER_UPLOAD';
 	contentKind: 'HTML' | 'IMAGE';
 	originalName?: string;
 	reviewComment?: string;
 	createTime?: string;
+}
+
+export interface AiModelStatus {
+	configured: boolean;
+	provider: string;
+	model: string;
+	baseUrl: string;
+	apiKeyEnvironmentVariable: string;
 }
 
 export interface ModuleUiDesignDetail extends ModuleUiDesign {
@@ -225,6 +233,11 @@ export const decideApproval = (
 
 export const getProjectPage = (params: PageQuery) => request({ url: '/admin/workflow/projects/page', method: 'get', params });
 
+export const getAiModelStatus = () => request({ url: '/admin/workflow/ai-model/status', method: 'get' });
+
+export const checkAiModelConnectivity = () =>
+	request({ url: '/admin/workflow/ai-model/connectivity', method: 'post', timeout: 240000 });
+
 export const getProjectWorkspace = (id: string) => request({ url: `/admin/workflow/projects/${id}/workspace`, method: 'get' });
 
 export const createProject = (data: Partial<WorkflowProject>) => request({ url: '/admin/workflow/projects', method: 'post', data });
@@ -244,7 +257,7 @@ export const uploadProjectMaterial = (projectId: string, data: FormData) =>
 export const parseProjectMaterial = (id: string) => request({ url: `/admin/workflow/materials/${id}/parse`, method: 'post' });
 
 export const analyzeProjectMaterials = (projectId: string) =>
-	request({ url: `/admin/workflow/projects/${projectId}/analysis`, method: 'post', timeout: 120000 });
+	request({ url: `/admin/workflow/projects/${projectId}/analysis`, method: 'post', timeout: 240000 });
 
 export const updateProjectFeature = (id: string, data: Partial<WorkflowFeature>) =>
 	request({ url: `/admin/workflow/features/${id}`, method: 'put', data });
@@ -253,7 +266,7 @@ export const reviewProjectFeature = (id: string, data: { action: 'APPROVE' | 'RE
 	request({ url: `/admin/workflow/features/${id}/reviews`, method: 'post', data });
 
 export const generateModulePrototype = (moduleId: string) =>
-	request({ url: `/admin/workflow/modules/${moduleId}/prototypes`, method: 'post', timeout: 120000 });
+	request({ url: `/admin/workflow/modules/${moduleId}/prototypes`, method: 'post', timeout: 240000 });
 
 export const getModulePrototype = (versionId: string) =>
 	request({ url: `/admin/workflow/prototypes/${versionId}`, method: 'get' });
@@ -262,7 +275,7 @@ export const reviewModulePrototype = (versionId: string, data: { action: 'APPROV
 	request({ url: `/admin/workflow/prototypes/${versionId}/reviews`, method: 'post', data });
 
 export const generateModuleUiDesign = (moduleId: string) =>
-	request({ url: `/admin/workflow/modules/${moduleId}/ui-designs/generate`, method: 'post', timeout: 120000 });
+	request({ url: `/admin/workflow/modules/${moduleId}/ui-designs/generate`, method: 'post', timeout: 240000 });
 
 export const uploadModuleUiDesign = (moduleId: string, data: FormData) =>
 	request({
@@ -286,7 +299,7 @@ export const saveFrontendDevelopmentSpec = (moduleId: string, data: { logic?: st
 	request({ url: `/admin/workflow/modules/${moduleId}/frontend-spec`, method: 'put', data });
 
 export const generateModuleFrontendCode = (moduleId: string) =>
-	request({ url: `/admin/workflow/modules/${moduleId}/frontend-codes/generate`, method: 'post', timeout: 120000 });
+	request({ url: `/admin/workflow/modules/${moduleId}/frontend-codes/generate`, method: 'post', timeout: 240000 });
 
 export const getModuleFrontendCode = (versionId: string) =>
 	request({ url: `/admin/workflow/frontend-codes/${versionId}`, method: 'get' });
