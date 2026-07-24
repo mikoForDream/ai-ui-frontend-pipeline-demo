@@ -9,6 +9,7 @@ import com.pig4cloud.pig.workflow.dto.WorkflowMaterialSummary;
 import com.pig4cloud.pig.workflow.dto.ModulePrototypeSummary;
 import com.pig4cloud.pig.workflow.dto.ModuleUiDesignSummary;
 import com.pig4cloud.pig.workflow.dto.ModuleFrontendCodeSummary;
+import com.pig4cloud.pig.workflow.dto.ModuleBackendCodeSummary;
 import com.pig4cloud.pig.workflow.dto.WorkflowProjectWorkspace;
 import com.pig4cloud.pig.workflow.entity.WorkflowArtifact;
 import com.pig4cloud.pig.workflow.entity.WorkflowArtifactVersion;
@@ -117,13 +118,17 @@ public class WorkflowProjectService {
 			.eq(WorkflowArtifact::getProjectId, projectId).eq(WorkflowArtifact::getArtifactType, "FRONTEND_CODE")
 			.isNotNull(WorkflowArtifact::getCurrentVersionId)).stream().map(this::frontendCodeSummary)
 			.filter(java.util.Objects::nonNull).toList();
+		List<ModuleBackendCodeSummary> backendCodes = artifactMapper.selectList(Wrappers.<WorkflowArtifact>lambdaQuery()
+				.eq(WorkflowArtifact::getProjectId, projectId).eq(WorkflowArtifact::getArtifactType, "BACKEND_CODE")
+				.isNotNull(WorkflowArtifact::getCurrentVersionId)).stream().map(this::backendCodeSummary)
+				.filter(java.util.Objects::nonNull).toList();
 		WorkflowProductSpec frozenSpec = productSpecMapper.selectOne(Wrappers.<WorkflowProductSpec>lambdaQuery()
 			.eq(WorkflowProductSpec::getProjectId, projectId)
 			.eq(WorkflowProductSpec::getStatus, "FROZEN")
 			.orderByDesc(WorkflowProductSpec::getCreateTime)
 			.last("LIMIT 1"));
 		return new WorkflowProjectWorkspace(project, materials, modules, features, prototypes, uiDesigns, frontendCodes,
-				frozenSpec == null ? null : frozenSpec.getVersionNo());
+				backendCodes, frozenSpec == null ? null : frozenSpec.getVersionNo());
 	}
 
 	private ModuleUiDesignSummary uiDesignSummary(WorkflowArtifact artifact) {
@@ -161,6 +166,18 @@ public class WorkflowProjectService {
 					version.getStatus(), content.path("generator").asText(), content.path("files").size(),
 					content.path("uiDesignVersionId").asLong(), version.getReviewComment(), version.getCreateTime());
 		} catch (JsonProcessingException exception) { throw new CheckedException("读取前端代码摘要失败: " + exception.getMessage()); }
+	}
+
+	private ModuleBackendCodeSummary backendCodeSummary(WorkflowArtifact artifact) {
+		WorkflowArtifactVersion version = artifactVersionMapper.selectById(artifact.getCurrentVersionId());
+		if (version == null) return null;
+		try {
+			JsonNode content = objectMapper.readTree(version.getContentJson());
+			return new ModuleBackendCodeSummary(artifact.getId(), artifact.getModuleId(), version.getId(), version.getVersionNo(),
+					version.getStatus(), content.path("generator").asText(), content.path("files").size(),
+					content.path("apiSummary").asText(), version.getReviewComment(), version.getCreateTime());
+		}
+		catch (JsonProcessingException exception) { throw new CheckedException("读取后端代码摘要失败"); }
 	}
 
 	public WorkflowProject requireProject(Long id) {

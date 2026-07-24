@@ -141,6 +141,37 @@ public class WorkflowAiGenerationService {
 		return new GeneratedFrontend(files, previewHtml);
 	}
 
+	public GeneratedBackend generateBackend(WorkflowProject project, WorkflowModule module,
+			List<WorkflowFeature> features, String revisionComment) {
+		Map<String, Object> context = moduleContext(project, module, features, null, revisionComment);
+		context.put("backendLogic", value(module.getBackendLogic()));
+		context.put("target", "Java 17 + Spring Boot + MyBatis-Plus；代码需适配项目既有技术栈，并把接口、DTO、Service、Mapper 和校验分层");
+		JsonNode result = gateway.generateStructured("backend_generation",
+				"你是高级 Java 后端工程师。根据已审核功能点、用户补充后端逻辑和项目技术栈生成可审查、可下载的后端代码。"
+						+ "实现真实的 REST 接口、参数校验、业务服务、持久化边界和明确错误处理，不要生成空壳或伪代码。"
+						+ "所有文件路径必须是相对路径，禁止依赖未列出的远程资源；代码只使用标准 Java/Spring/MyBatis-Plus API。",
+				"生成此前端模块对应的后端实现。输出接口摘要并给出完整源文件。\n" + json(context),
+				backendSchema()).content();
+		List<GeneratedCodeFile> files = new ArrayList<>();
+		Set<String> paths = new HashSet<>();
+		int totalLength = 0;
+		for (JsonNode fileNode : result.path("files")) {
+			String path = requiredText(fileNode, "path", 300).replace('\\', '/');
+			if (!isSafePath(path) || !paths.add(path.toLowerCase(Locale.ROOT))) {
+				throw new CheckedException("AI 生成了不安全或重复的后端代码文件路径");
+			}
+			String content = requiredText(fileNode, "content", MAX_CODE_LENGTH);
+			totalLength += content.length();
+			if (totalLength > MAX_CODE_LENGTH) throw new CheckedException("AI 生成的后端代码总量超过限制");
+			files.add(new GeneratedCodeFile(path, requiredText(fileNode, "language", 40), content));
+			if (files.size() > 80) throw new CheckedException("AI 生成的后端代码文件数量超过限制");
+		}
+		if (files.isEmpty() || files.stream().noneMatch(file -> file.path().endsWith(".java"))) {
+			throw new CheckedException("AI 生成结果缺少 Java 源文件");
+		}
+		return new GeneratedBackend(requiredText(result, "apiSummary", 20_000), files);
+	}
+
 	private String generateHtml(String operation, String instructions, Map<String, Object> context,
 			List<AiModelGateway.AiImage> images, JsonNode schema) {
 		JsonNode result = gateway.generateStructured(operation, instructions,
@@ -178,6 +209,11 @@ public class WorkflowAiGenerationService {
 	private JsonNode frontendSchema() {
 		ObjectNode file = objectSchema(Map.of("path", stringSchema(), "language", stringSchema(), "content", stringSchema()));
 		return objectSchema(Map.of("previewHtml", stringSchema(), "files", arraySchema(file, 1)));
+	}
+
+	private JsonNode backendSchema() {
+		ObjectNode file = objectSchema(Map.of("path", stringSchema(), "language", stringSchema(), "content", stringSchema()));
+		return objectSchema(Map.of("apiSummary", stringSchema(), "files", arraySchema(file, 1)));
 	}
 
 	private ObjectNode objectSchema(Map<String, JsonNode> properties) {
@@ -259,4 +295,5 @@ public class WorkflowAiGenerationService {
 	public record AiDraftModule(String name, String description, List<AiDraftFeature> features) { }
 	public record RequirementDraft(List<AiDraftModule> modules) { }
 	public record GeneratedFrontend(List<GeneratedCodeFile> files, String previewHtml) { }
+	public record GeneratedBackend(String apiSummary, List<GeneratedCodeFile> files) { }
 }

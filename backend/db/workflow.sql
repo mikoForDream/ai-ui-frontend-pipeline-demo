@@ -350,6 +350,7 @@ SET @wf_project_current_stage_exists = (
   SELECT COUNT(*) FROM information_schema.columns
   WHERE table_schema = DATABASE() AND table_name = 'wf_project' AND column_name = 'current_stage'
 );
+
 SET @wf_project_current_stage_sql = IF(
   @wf_project_current_stage_exists = 0,
   'ALTER TABLE `wf_project` ADD COLUMN `current_stage` varchar(32) NOT NULL DEFAULT ''MATERIAL_COLLECTION'' AFTER `status`',
@@ -546,3 +547,34 @@ WHERE `menu_id` IN (
   10010, 10011, 10012, 10013, 10014, 10015, 10016, 10017, 10018, 10019,
   10020, 10021, 10022, 10023, 10024, 10025, 10026, 10027, 10028, 10030, 10040
 );
+
+-- V7: module backend implementation notes, code generation and review.
+SET @wf_module_backend_logic_exists = (
+  SELECT COUNT(*) FROM information_schema.columns
+  WHERE table_schema = DATABASE() AND table_name = 'wf_module' AND column_name = 'backend_logic'
+);
+SET @wf_module_backend_logic_sql = IF(
+  @wf_module_backend_logic_exists = 0,
+  'ALTER TABLE `wf_module` ADD COLUMN `backend_logic` text DEFAULT NULL AFTER `frontend_logic`',
+  'SELECT 1'
+);
+PREPARE wf_module_backend_logic_stmt FROM @wf_module_backend_logic_sql;
+EXECUTE wf_module_backend_logic_stmt;
+DEALLOCATE PREPARE wf_module_backend_logic_stmt;
+
+INSERT IGNORE INTO `sys_menu` (`menu_id`, `name`, `permission`, `parent_id`, `visible`, `sort_order`, `menu_type`, `create_by`) VALUES
+(10029, '模块后端逻辑编辑', 'workflow_backend_edit', 10015, '0', 15, '1', 'admin'),
+(10031, '模块后端代码生成', 'workflow_backend_generate', 10015, '0', 16, '1', 'admin'),
+(10032, '模块后端代码审核', 'workflow_backend_review', 10015, '0', 17, '1', 'admin');
+
+INSERT IGNORE INTO `sys_role_menu` (`role_id`, `menu_id`) VALUES
+(1, 10029), (1, 10031), (1, 10032);
+
+UPDATE `sys_menu`
+SET `name` = CASE `menu_id`
+  WHEN 10029 THEN '模块后端逻辑编辑'
+  WHEN 10031 THEN '模块后端代码生成'
+  WHEN 10032 THEN '模块后端代码审核'
+  ELSE `name`
+END
+WHERE `menu_id` IN (10029, 10031, 10032);

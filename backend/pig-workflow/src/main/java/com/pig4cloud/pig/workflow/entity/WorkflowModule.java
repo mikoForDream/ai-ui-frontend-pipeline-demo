@@ -21,6 +21,7 @@ public class WorkflowModule extends BaseEntity {
 	private String name;
 	private String description;
 	private String frontendLogic;
+	private String backendLogic;
 	private Integer sortOrder;
 	private String status;
 

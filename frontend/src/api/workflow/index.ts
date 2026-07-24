@@ -103,7 +103,8 @@ export interface WorkflowModule {
 	description?: string;
 	sortOrder: number;
 	frontendLogic?: string;
-	status: 'REQUIREMENT_REVIEW' | 'REQUIREMENT_APPROVED' | 'PROTOTYPE_REVIEW' | 'PROTOTYPE_REVISION' | 'PROTOTYPE_APPROVED' | 'UI_REVIEW' | 'UI_REVISION' | 'UI_APPROVED' | 'FRONTEND_REVIEW' | 'FRONTEND_REVISION' | 'FRONTEND_APPROVED';
+	backendLogic?: string;
+	status: 'REQUIREMENT_REVIEW' | 'REQUIREMENT_APPROVED' | 'PROTOTYPE_REVIEW' | 'PROTOTYPE_REVISION' | 'PROTOTYPE_APPROVED' | 'UI_REVIEW' | 'UI_REVISION' | 'UI_APPROVED' | 'FRONTEND_REVIEW' | 'FRONTEND_REVISION' | 'FRONTEND_APPROVED' | 'BACKEND_REVIEW' | 'BACKEND_REVISION' | 'BACKEND_APPROVED';
 }
 
 export interface ModulePrototype {
@@ -167,6 +168,24 @@ export interface ModuleFrontendCodeDetail extends ModuleFrontendCode {
 	files: GeneratedCodeFile[];
 }
 
+export interface ModuleBackendCode {
+	artifactId: string;
+	moduleId: string;
+	versionId: string;
+	versionNo: string;
+	status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'RETURNED';
+	generator: string;
+	fileCount: number;
+	apiSummary: string;
+	reviewComment?: string;
+	createTime?: string;
+}
+
+export interface ModuleBackendCodeDetail extends ModuleBackendCode {
+	backendLogic: string;
+	files: GeneratedCodeFile[];
+}
+
 export interface WorkflowFeature {
 	id: string;
 	projectId: string;
@@ -189,6 +208,7 @@ export interface WorkflowProjectWorkspace {
 	prototypes: ModulePrototype[];
 	uiDesigns: ModuleUiDesign[];
 	frontendCodes: ModuleFrontendCode[];
+	backendCodes: ModuleBackendCode[];
 	frozenSpecVersion?: string;
 }
 
@@ -309,3 +329,18 @@ export const downloadModuleFrontendCode = (versionId: string) =>
 
 export const reviewModuleFrontendCode = (versionId: string, data: { action: 'APPROVE' | 'REJECT' | 'RETURN'; comment?: string }) =>
 	request({ url: `/admin/workflow/frontend-codes/${versionId}/reviews`, method: 'post', data });
+
+export const saveBackendDevelopmentSpec = (moduleId: string, data: { logic?: string }) =>
+	request({ url: `/admin/workflow/modules/${moduleId}/backend-spec`, method: 'put', data });
+
+export const generateModuleBackendCode = (moduleId: string) =>
+	request({ url: `/admin/workflow/modules/${moduleId}/backend-codes/generate`, method: 'post', timeout: 240000 });
+
+export const getModuleBackendCode = (versionId: string) =>
+	request({ url: `/admin/workflow/backend-codes/${versionId}`, method: 'get' });
+
+export const downloadModuleBackendCode = (versionId: string) =>
+	request({ url: `/admin/workflow/backend-codes/${versionId}/download`, method: 'get', responseType: 'blob' });
+
+export const reviewModuleBackendCode = (versionId: string, data: { action: 'APPROVE' | 'REJECT' | 'RETURN'; comment?: string }) =>
+	request({ url: `/admin/workflow/backend-codes/${versionId}/reviews`, method: 'post', data });

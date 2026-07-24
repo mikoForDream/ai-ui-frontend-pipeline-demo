@@ -10,5 +10,5 @@ import java.util.List;
 public record WorkflowProjectWorkspace(WorkflowProject project, List<WorkflowMaterialSummary> materials,
 		List<WorkflowModule> modules, List<WorkflowFeature> features, List<ModulePrototypeSummary> prototypes,
 		List<ModuleUiDesignSummary> uiDesigns, List<ModuleFrontendCodeSummary> frontendCodes,
-		String frozenSpecVersion) {
+		List<ModuleBackendCodeSummary> backendCodes, String frozenSpecVersion) {
 }
