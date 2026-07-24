@@ -66,6 +66,9 @@ try {
 	Assert-True ($currentUser.permissions -contains 'workflow_frontend_edit') 'login authority lacks frontend logic edit permission'
 	Assert-True ($currentUser.permissions -contains 'workflow_frontend_generate') 'login authority lacks frontend generation permission'
 	Assert-True ($currentUser.permissions -contains 'workflow_frontend_review') 'login authority lacks frontend review permission'
+	$menuJson = Invoke-WorkflowApi Get '/menu' | ConvertTo-Json -Depth 20 -Compress
+	Assert-True ($menuJson -like '*"name":"工作流管理"*') 'workflow menu name is missing or has an invalid charset'
+	Assert-True ($menuJson -like '*"name":"研发项目"*') 'project menu name is missing or has an invalid charset'
 
 	$stamp = Get-Date -Format 'yyyyMMddHHmmss'
 	$project = Invoke-WorkflowApi Post '/workflow/projects' @{
