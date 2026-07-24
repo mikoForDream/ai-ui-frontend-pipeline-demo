@@ -67,6 +67,65 @@ export interface WorkflowApproval {
 	createTime?: string;
 }
 
+export interface WorkflowProject {
+	id: string;
+	projectCode: string;
+	name: string;
+	description?: string;
+	status: 'ACTIVE' | 'ARCHIVED';
+	currentStage: string;
+	repositoryUrl?: string;
+	defaultBranch?: string;
+	frontendPath?: string;
+	backendPath?: string;
+	techStack?: string;
+	createTime?: string;
+}
+
+export interface WorkflowMaterial {
+	id: string;
+	originalName: string;
+	contentType?: string;
+	extension: string;
+	fileSize: number;
+	checksum: string;
+	parseStatus: 'UPLOADED' | 'PARSED' | 'READY_FOR_AI' | 'FAILED';
+	extractedLength: number;
+	parseMessage?: string;
+	createTime?: string;
+}
+
+export interface WorkflowModule {
+	id: string;
+	projectId: string;
+	moduleCode: string;
+	name: string;
+	description?: string;
+	sortOrder: number;
+	status: 'REQUIREMENT_REVIEW' | 'REQUIREMENT_APPROVED';
+}
+
+export interface WorkflowFeature {
+	id: string;
+	projectId: string;
+	moduleId: string;
+	featureCode: string;
+	name: string;
+	description?: string;
+	acceptanceCriteria?: string;
+	priority: 'HIGH' | 'MEDIUM' | 'LOW';
+	status: 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+	reviewComment?: string;
+	version: number;
+}
+
+export interface WorkflowProjectWorkspace {
+	project: WorkflowProject;
+	materials: WorkflowMaterial[];
+	modules: WorkflowModule[];
+	features: WorkflowFeature[];
+}
+
 export const getDefinitionPage = (params: PageQuery) => request({ url: '/admin/workflow/definitions/page', method: 'get', params });
 
 export const getDefinition = (id: string) => request({ url: `/admin/workflow/definitions/${id}`, method: 'get' });
@@ -105,3 +164,32 @@ export const decideApproval = (
 	id: string,
 	data: { decision: 'APPROVE' | 'REJECT' | 'RETURN'; operationKey: string; comment?: string; outputJson?: string }
 ) => request({ url: `/admin/workflow/approvals/${id}/decisions`, method: 'post', data });
+
+export const getProjectPage = (params: PageQuery) => request({ url: '/admin/workflow/projects/page', method: 'get', params });
+
+export const getProjectWorkspace = (id: string) => request({ url: `/admin/workflow/projects/${id}/workspace`, method: 'get' });
+
+export const createProject = (data: Partial<WorkflowProject>) => request({ url: '/admin/workflow/projects', method: 'post', data });
+
+export const updateProject = (id: string, data: Partial<WorkflowProject>) =>
+	request({ url: `/admin/workflow/projects/${id}`, method: 'put', data });
+
+export const uploadProjectMaterial = (projectId: string, data: FormData) =>
+	request({
+		url: `/admin/workflow/projects/${projectId}/materials`,
+		method: 'post',
+		data,
+		headers: { 'Content-Type': 'multipart/form-data' },
+		timeout: 120000,
+	});
+
+export const parseProjectMaterial = (id: string) => request({ url: `/admin/workflow/materials/${id}/parse`, method: 'post' });
+
+export const analyzeProjectMaterials = (projectId: string) =>
+	request({ url: `/admin/workflow/projects/${projectId}/analysis`, method: 'post', timeout: 120000 });
+
+export const updateProjectFeature = (id: string, data: Partial<WorkflowFeature>) =>
+	request({ url: `/admin/workflow/features/${id}`, method: 'put', data });
+
+export const reviewProjectFeature = (id: string, data: { action: 'APPROVE' | 'REJECT' | 'RETURN'; comment?: string }) =>
+	request({ url: `/admin/workflow/features/${id}/reviews`, method: 'post', data });
